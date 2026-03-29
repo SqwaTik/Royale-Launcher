@@ -22,8 +22,8 @@ const DEFAULT_SETTINGS = {
 }
 
 const DEFAULT_LAUNCHER_CONFIG = {
-  updateRepo: '',
-  releasePage: ''
+  updateRepo: 'SqwaTik/Royale-Launcher',
+  releasePage: 'https://github.com/SqwaTik/Royale-Launcher/releases/latest'
 }
 
 const DEFAULT_VERSION_CATALOG = [
@@ -31,7 +31,7 @@ const DEFAULT_VERSION_CATALOG = [
     versionName: '1.21.11',
     channel: 'Основная сборка',
     title: 'Royale Master',
-    source: 'client-assets/1.21.11.zip',
+    source: 'https://github.com/SqwaTik/Royale-Launcher/releases/download/v0.1.0/1.21.11.zip',
     notes: 'Главная актуальная версия клиента.'
   },
   {

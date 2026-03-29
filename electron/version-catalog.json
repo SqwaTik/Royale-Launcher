@@ -3,7 +3,7 @@
     "versionName": "1.21.11",
     "channel": "Основная сборка",
     "title": "Royale Master",
-    "source": "client-assets/1.21.11.zip",
+    "source": "https://github.com/SqwaTik/Royale-Launcher/releases/download/v0.1.0/1.21.11.zip",
     "notes": "Главная актуальная версия клиента."
   },
   {
