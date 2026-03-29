@@ -1,0 +1,11 @@
+node_modules/
+dist-app/
+dist-renderer/
+preview-*.png
+*.log
+
+client-assets/*.zip
+client-build/*/mods/*.jar
+
+.DS_Store
+Thumbs.db
