@@ -6,7 +6,7 @@ const DEFAULT_SETTINGS = {
   memoryMb: 4096,
   lastSelectedVersion: '1.21.11',
   versions: [
-    { versionName: '1.21.11', channel: 'Основная сборка', title: 'Royale Master', source: 'client-assets/1.21.11.zip', notes: 'Главная актуальная версия клиента.' },
+    { versionName: '1.21.11', channel: 'Основная сборка', title: 'Royale Master', source: 'client-assets/1.21.11.zip', notes: 'Готовая сборка Royale Master для модифицированного Minecraft-клиента.' },
     { versionName: '26.1', channel: 'Скоро', title: 'Версия готовится', source: '', notes: 'Эта версия появится позже.' },
     { versionName: '1.21.4', channel: 'Скоро', title: 'Версия готовится', source: '', notes: 'Эта версия появится позже.' },
     { versionName: '1.16.5', channel: 'Скоро', title: 'Версия готовится', source: '', notes: 'Эта версия появится позже.' },
@@ -39,20 +39,26 @@ const DEFAULT_UPDATE_INFO = {
   currentVersion: ''
 }
 
+const DEFAULT_MEMORY_PROFILE = {
+  totalMemoryMb: 8192,
+  recommendedMemoryMb: 4096
+}
+
 const TEXT = {
   appName: 'Royale Launcher',
   home: 'Главная',
   settings: 'Настройки',
-  heroEyebrow: 'Game launcher',
-  heroLead: 'Выбираете нужную версию, ставите клиент в свою папку и запускаете его из одного окна.',
+  heroEyebrow: 'Minecraft launcher',
+  heroLead: 'Лаунчер для модифицированного Minecraft-клиента Royale Master: скачивает готовую сборку, обновляет файлы в выбранной папке и запускает ее из одного окна.',
   chooseVersionTitle: 'Выберите версию',
-  chooseVersionLead: 'Список версий прокручивается внутри блока и не ломает весь экран.',
-  featureBadge: 'Royale Build',
-  featureLabel: 'Выбранная версия',
+  chooseVersionLead: 'Выберите нужную сборку клиента. Остальные версии открываются прокруткой внутри блока.',
+  featureBadge: 'Royale Launcher',
+  featureLabel: 'Версия клиента',
   folderLabel: 'Папка клиента',
   installPathLabel: 'Путь установки',
   memoryLabel: 'Память',
   memoryShortLabel: 'Память Java (MB)',
+  memoryAuto: 'AUTO',
   javaArgsLabel: 'Java аргументы',
   javaArgsHint: 'Например: -Dfile.encoding=UTF-8 -XX:+UnlockExperimentalVMOptions. Память подставляется автоматически из поля выше.',
   openFolder: 'Открыть папку',
@@ -69,13 +75,13 @@ const TEXT = {
   stateSoon: 'Скоро',
   stateReady: 'Готово',
   versionReady: 'Версия установлена и готова к запуску.',
-  versionInstall: 'Версия еще не установлена. Нажмите «Скачать».',
+  versionInstall: 'Клиент еще не установлен. Нажмите «Скачать», чтобы поставить или обновить сборку.',
   versionSoon: 'Эта версия пока не подключена.',
   progressHint: 'Во время установки прогресс появится прямо внутри кнопки.',
   objectUnit: 'объектов',
   updateLabel: 'Доступно обновление лаунчера',
   updateAction: 'Обновить',
-  settingsLead: 'Изменения сохраняются автоматически.',
+  settingsLead: 'Изменения сохраняются автоматически, а AUTO подбирает память по вашему ПК.',
   settingsVersions: 'Доступные версии',
   launchError: 'Операция завершилась с ошибкой'
 }
@@ -199,6 +205,11 @@ function getVersionStateChip(entry, selectedVersion, versionState) {
   return { label: TEXT.stateSoon, tone: 'muted' }
 }
 
+function formatSystemMemory(memoryProfile) {
+  const totalGb = Math.max(1, Math.round((memoryProfile.totalMemoryMb || 0) / 1024))
+  return `Система: ${totalGb} GB · AUTO: ${memoryProfile.recommendedMemoryMb} MB`
+}
+
 function App() {
   const api = window.royaleApi
   const autosaveReadyRef = useRef(false)
@@ -213,6 +224,7 @@ function App() {
   const [busy, setBusy] = useState(false)
   const [statusText, setStatusText] = useState('')
   const [updateInfo, setUpdateInfo] = useState(DEFAULT_UPDATE_INFO)
+  const [memoryProfile, setMemoryProfile] = useState(DEFAULT_MEMORY_PROFILE)
 
   const selectedProfile = useMemo(
     () => settings.versions.find((entry) => entry.versionName === selectedVersion) || settings.versions[0],
@@ -240,13 +252,15 @@ function App() {
         await api.saveSettings(nextPayload)
       }
 
-      const [state, update] = await Promise.all([
+      const [state, update, memory] = await Promise.all([
         api.getVersionState(nextPayload.lastSelectedVersion),
-        api.checkLauncherUpdate()
+        api.checkLauncherUpdate(),
+        api.getMemoryProfile()
       ])
 
       setVersionState({ ...DEFAULT_VERSION_STATE, ...state })
       setUpdateInfo({ ...DEFAULT_UPDATE_INFO, ...update })
+      setMemoryProfile({ ...DEFAULT_MEMORY_PROFILE, ...memory })
       autosaveReadyRef.current = true
     }
 
@@ -282,6 +296,7 @@ function App() {
         memoryMb: Math.max(1024, Number(draft.memoryMb) || 4096),
         lastSelectedVersion: selectedVersion
       }
+      const previousInstallFolder = settings.installFolder
 
       const saved = await api.saveSettings(nextSettings)
       setSettings(saved)
@@ -293,7 +308,10 @@ function App() {
         versions: saved.versions,
         lastSelectedVersion: saved.lastSelectedVersion
       }))
-      await refreshVersionState(saved.lastSelectedVersion)
+
+      if (saved.installFolder !== previousInstallFolder) {
+        await refreshVersionState(saved.lastSelectedVersion)
+      }
     }, 260)
 
     return () => {
@@ -358,6 +376,10 @@ function App() {
     setDraft((current) => ({ ...current, [field]: value }))
   }
 
+  function handleAutoMemory() {
+    setDraft((current) => ({ ...current, memoryMb: memoryProfile.recommendedMemoryMb }))
+  }
+
   const buttonTitle = busy
     ? getProgressTitle(installProgress)
     : versionState.installed
@@ -371,7 +393,7 @@ function App() {
     : versionState.installed
       ? 'Клиент готов к запуску'
       : versionState.hasSource
-        ? 'Установка в выбранную папку'
+        ? 'Скачает или обновит файлы клиента'
         : 'Версия появится позже'
 
   const buttonSide = busy ? `${getProgressPercent(installProgress)}%` : ''
@@ -431,7 +453,7 @@ function App() {
           ) : null}
 
           {page === 'home' ? (
-            <section className={`hero ${updateInfo.available ? 'has-update-banner' : ''}`}>
+            <section className={`hero page-surface ${updateInfo.available ? 'has-update-banner' : ''}`}>
               <div className="hero__column hero__column--main">
                 <div className="hero__intro">
                   <span className="eyebrow">{TEXT.heroEyebrow}</span>
@@ -453,17 +475,19 @@ function App() {
 
                   <p className="version-dock__lead">{TEXT.chooseVersionLead}</p>
 
-                  <div className="version-dock__list">
-                    {settings.versions.map((entry) => (
-                      <VersionItem
-                        key={entry.versionName}
-                        active={entry.versionName === selectedVersion}
-                        version={entry.versionName}
-                        subtitle={entry.channel || entry.title || 'Royale'}
-                        state={getVersionStateChip(entry, selectedVersion, versionState)}
-                        onClick={() => selectVersion(entry.versionName)}
-                      />
-                    ))}
+                  <div className="version-dock__viewport">
+                    <div className="version-dock__list">
+                      {settings.versions.map((entry) => (
+                        <VersionItem
+                          key={entry.versionName}
+                          active={entry.versionName === selectedVersion}
+                          version={entry.versionName}
+                          subtitle={entry.channel || entry.title || 'Royale'}
+                          state={getVersionStateChip(entry, selectedVersion, versionState)}
+                          onClick={() => selectVersion(entry.versionName)}
+                        />
+                      ))}
+                    </div>
                   </div>
                 </section>
               </div>
@@ -489,6 +513,13 @@ function App() {
                       </div>
                     </div>
 
+                    <div className="feature-stage__details">
+                      <div className="feature-detail feature-detail--wide">
+                        <span>{TEXT.folderLabel}</span>
+                        <strong>{versionState.installDir || 'Папка будет создана при первой установке'}</strong>
+                      </div>
+                    </div>
+
                     <button
                       className={`primary-action ${busy ? 'is-busy' : ''} ${buttonDisabled ? 'is-locked' : ''}`}
                       onClick={handlePrimaryAction}
@@ -503,13 +534,6 @@ function App() {
                       {buttonSide ? <span className="primary-action__side">{buttonSide}</span> : null}
                     </button>
 
-                    <div className="feature-stage__details">
-                      <div className="feature-detail feature-detail--wide">
-                        <span>{TEXT.folderLabel}</span>
-                        <strong>{versionState.installDir || 'Папка будет создана при первой установке'}</strong>
-                      </div>
-                    </div>
-
                     {busy ? <p className="feature-stage__hint">{getProgressCaption(installProgress)}</p> : null}
                     {statusText ? <p className="feature-stage__status-line">{statusText}</p> : null}
                   </div>
@@ -517,7 +541,7 @@ function App() {
               </aside>
             </section>
           ) : (
-            <section className={`settings ${updateInfo.available ? 'has-update-banner' : ''}`}>
+            <section className={`settings page-surface ${updateInfo.available ? 'has-update-banner' : ''}`}>
               <div className="settings__header">
                 <span className="eyebrow">Launcher setup</span>
                 <h1>{TEXT.settings}</h1>
@@ -547,14 +571,20 @@ function App() {
                 <div className="settings-card settings-card--memory">
                   <label className="field">
                     <span className="field__label">{TEXT.memoryShortLabel}</span>
-                    <input
-                      type="number"
-                      min="1024"
-                      step="512"
-                      value={draft.memoryMb}
-                      onChange={(event) => updateDraftField('memoryMb', event.target.value)}
-                    />
+                    <div className="field__control field__control--with-action">
+                      <input
+                        type="number"
+                        min="1024"
+                        step="512"
+                        value={draft.memoryMb}
+                        onChange={(event) => updateDraftField('memoryMb', event.target.value)}
+                      />
+                      <button className="field__action" type="button" onClick={handleAutoMemory}>
+                        {TEXT.memoryAuto}
+                      </button>
+                    </div>
                   </label>
+                  <p className="settings-note settings-note--compact">{formatSystemMemory(memoryProfile)}</p>
                 </div>
 
                 <div className="settings-card settings-card--java">

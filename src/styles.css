@@ -179,8 +179,8 @@ input {
 .rail__stack {
   width: 100%;
   display: grid;
-  gap: 6px;
-  padding: 6px;
+  gap: 8px;
+  padding: 8px;
   overflow: hidden;
   border-radius: 28px;
   background:
@@ -191,16 +191,19 @@ input {
 
 .rail__nav {
   width: 100%;
-  min-height: 104px;
+  min-height: 96px;
   display: grid;
   justify-items: center;
   align-content: center;
-  gap: 10px;
+  gap: 8px;
   padding: 14px 10px;
   border-radius: 22px;
+  border: 1px solid transparent;
   background: transparent;
   color: rgba(246, 240, 231, 0.68);
   cursor: pointer;
+  position: relative;
+  overflow: hidden;
   transition: transform 150ms ease, background 150ms ease, color 150ms ease;
 }
 
@@ -211,9 +214,20 @@ input {
 
 .rail__nav.is-active {
   background:
-    linear-gradient(180deg, rgba(255, 240, 203, 0.16), rgba(255, 156, 80, 0.08)),
+    linear-gradient(180deg, rgba(255, 240, 203, 0.12), rgba(255, 156, 80, 0.05)),
     rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 213, 129, 0.16);
   color: var(--gold-0);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 12px 24px rgba(0, 0, 0, 0.18);
+}
+
+.rail__nav.is-active::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(circle at 50% 0%, rgba(255, 240, 203, 0.18), transparent 58%);
+  pointer-events: none;
 }
 
 .rail__nav-icon {
@@ -233,7 +247,7 @@ input {
 
 .rail__nav-label {
   font-size: 10px;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.15em;
   text-transform: uppercase;
 }
 
@@ -339,6 +353,10 @@ input {
   gap: 20px;
 }
 
+.page-surface {
+  animation: page-enter 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 .eyebrow,
 .section-label,
 .field__label,
@@ -353,9 +371,16 @@ input {
 }
 
 .eyebrow {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 14px;
   margin-bottom: 14px;
-  color: rgba(255, 227, 178, 0.74);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: rgba(255, 227, 178, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .hero h1,
@@ -390,10 +415,12 @@ input {
 
 .version-dock {
   min-height: 0;
-  flex: 1;
+  flex: 0 0 auto;
+  align-self: flex-start;
   display: flex;
   flex-direction: column;
   padding: 22px;
+  contain: layout paint;
 }
 
 .version-dock__head {
@@ -421,11 +448,29 @@ input {
   padding-right: 6px;
 }
 
-.version-dock__list {
+.version-dock__viewport {
+  position: relative;
   margin-top: 18px;
+  overflow: hidden;
+  border-radius: 24px;
+}
+
+.version-dock__viewport::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 6px;
+  bottom: 0;
+  height: 30px;
+  background: linear-gradient(180deg, rgba(13, 18, 27, 0), rgba(13, 18, 27, 0.98));
+  pointer-events: none;
+}
+
+.version-dock__list {
   display: grid;
   gap: 10px;
-  flex: 1;
+  max-height: 340px;
+  padding: 0 10px 18px 0;
 }
 
 .version-item,
@@ -468,7 +513,7 @@ input {
 
 .version-item__copy strong,
 .catalog-row__copy strong {
-  font-size: 28px;
+  font-size: 24px;
   line-height: 1;
 }
 
@@ -516,6 +561,7 @@ input {
   border-radius: 32px;
   border: 1px solid var(--stroke-1);
   background: rgba(7, 10, 15, 0.9);
+  contain: layout paint;
 }
 
 .feature-stage__art {
@@ -535,7 +581,7 @@ input {
   display: flex;
   flex-direction: column;
   gap: 18px;
-  padding: 24px;
+  padding: 22px 24px 24px;
 }
 
 .feature-stage__badge {
@@ -549,12 +595,13 @@ input {
   border: 1px solid rgba(255, 240, 203, 0.16);
   color: var(--gold-0);
   font-weight: 700;
+  opacity: 0.86;
 }
 
 .feature-stage__panel {
   width: min(420px, 100%);
-  max-height: calc(100% - 54px);
-  margin-top: 0;
+  max-height: calc(100% - 194px);
+  margin-top: clamp(108px, 11vh, 142px);
   margin-left: auto;
   overflow: auto;
   display: flex;
@@ -566,6 +613,7 @@ input {
     linear-gradient(180deg, rgba(16, 22, 31, 0.94), rgba(9, 12, 18, 0.96)),
     rgba(9, 12, 18, 0.94);
   border: 1px solid rgba(255, 255, 255, 0.08);
+  contain: layout paint;
 }
 
 .feature-stage__header h2 {
@@ -791,6 +839,7 @@ input {
 
 .settings-card {
   padding: 22px;
+  contain: layout paint;
 }
 
 .settings-card--path {
@@ -815,6 +864,14 @@ input {
   gap: 10px;
 }
 
+.field__control {
+  position: relative;
+}
+
+.field__control--with-action input {
+  padding-right: 102px;
+}
+
 .field__label {
   color: rgba(255, 255, 255, 0.54);
 }
@@ -833,6 +890,31 @@ input {
   color: rgba(255, 255, 255, 0.32);
 }
 
+.field__action {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
+  min-width: 74px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 240, 203, 0.14), rgba(255, 156, 80, 0.08)),
+    rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 213, 129, 0.16);
+  color: var(--gold-0);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  cursor: pointer;
+  transition: transform 150ms ease, background 150ms ease;
+}
+
+.field__action:hover {
+  transform: translateY(calc(-50% - 1px));
+}
+
 .settings-actions {
   display: flex;
   gap: 12px;
@@ -843,6 +925,11 @@ input {
 .settings-note {
   margin-top: 14px;
   font-size: 13px;
+}
+
+.settings-note--compact {
+  margin-top: 12px;
+  color: var(--text-faint);
 }
 
 .links-header {
@@ -881,6 +968,18 @@ input {
   border-radius: 999px;
 }
 
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @media (max-width: 1200px) {
   .hero {
     grid-template-columns: 1fr;
@@ -893,6 +992,8 @@ input {
 
   .feature-stage__panel {
     width: 100%;
+    max-height: none;
+    margin-top: 86px;
   }
 
   .settings-grid {

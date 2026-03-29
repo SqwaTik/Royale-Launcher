@@ -5,19 +5,18 @@
 </p>
 
 <p align="center">
-  Windows-лаунчер для <strong>Royale Master</strong> с доставкой сборок через GitHub Releases,
-  одной главной кнопкой установки и запуска, а также фиксированным каталогом версий от владельца проекта.
+  Лаунчер для <strong>модифицированного Minecraft-клиента Royale Master</strong>.
+  Он скачивает готовую сборку через GitHub Releases, обновляет файлы клиента в выбранной папке и запускает его из одного окна.
 </p>
 
 <p align="center">
-  <a href="https://github.com/SqwaTik/Royale-Launcher/releases/latest">
-    <img src="https://img.shields.io/github/v/release/SqwaTik/Royale-Launcher?style=for-the-badge&label=последний%20релиз" alt="Последний релиз">
-  </a>
-  <a href="https://github.com/SqwaTik/Royale-Launcher/releases">
-    <img src="https://img.shields.io/github/downloads/SqwaTik/Royale-Launcher/total?style=for-the-badge&label=загрузки" alt="Загрузки">
-  </a>
-  <img src="https://img.shields.io/badge/platform-Windows-0b1018?style=for-the-badge" alt="Только Windows">
-  <img src="https://img.shields.io/badge/built%20with-Electron%20%2B%20React-0b1018?style=for-the-badge" alt="Electron и React">
+  <a href="https://github.com/SqwaTik/Royale-Launcher/releases/latest">Последний релиз</a>
+  ·
+  <a href="https://github.com/SqwaTik/Royale-Launcher/releases/latest/download/RoyaleLauncherSetup.exe">Установщик</a>
+  ·
+  <a href="https://github.com/SqwaTik/Royale-Launcher/releases/latest/download/RoyaleLauncherPortable.exe">Portable</a>
+  ·
+  <a href="https://github.com/SqwaTik/Royale-Launcher/releases/latest/download/1.21.11.zip">Клиент 1.21.11</a>
 </p>
 
 ## Скриншоты

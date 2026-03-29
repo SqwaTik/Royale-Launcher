@@ -32,7 +32,7 @@ const DEFAULT_VERSION_CATALOG = [
     channel: 'Основная сборка',
     title: 'Royale Master',
     source: 'https://github.com/SqwaTik/Royale-Launcher/releases/latest/download/1.21.11.zip',
-    notes: 'Главная актуальная версия клиента.'
+    notes: 'Готовая сборка Royale Master для модифицированного Minecraft-клиента.'
   },
   {
     versionName: '26.1',
@@ -326,6 +326,19 @@ function compareVersions(left, right) {
   }
 
   return 0
+}
+
+function getMemoryProfile() {
+  const totalMemoryMb = Math.max(2048, Math.round(os.totalmem() / (1024 * 1024)))
+  const safeBudgetMb = Math.max(2048, totalMemoryMb - 3072)
+  const halfMemoryMb = Math.max(2048, Math.floor(totalMemoryMb * 0.5))
+  const rawRecommendedMb = Math.min(safeBudgetMb, halfMemoryMb, 8192)
+  const recommendedMemoryMb = Math.max(2048, Math.floor(rawRecommendedMb / 512) * 512 || 2048)
+
+  return {
+    totalMemoryMb,
+    recommendedMemoryMb
+  }
 }
 
 async function checkLauncherUpdate() {
@@ -810,6 +823,7 @@ app.on('window-all-closed', () => {
 
 ipcMain.handle('settings:get', async () => loadSettings())
 ipcMain.handle('settings:save', async (_event, payload) => saveSettings(payload))
+ipcMain.handle('system:get-memory-profile', async () => getMemoryProfile())
 ipcMain.handle('launcher:check-update', async () => checkLauncherUpdate())
 ipcMain.handle('dialog:pick-folder', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {

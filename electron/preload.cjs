@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 contextBridge.exposeInMainWorld('royaleApi', {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (payload) => ipcRenderer.invoke('settings:save', payload),
+  getMemoryProfile: () => ipcRenderer.invoke('system:get-memory-profile'),
   checkLauncherUpdate: () => ipcRenderer.invoke('launcher:check-update'),
   pickFolder: () => ipcRenderer.invoke('dialog:pick-folder'),
   openFolder: (targetPath) => ipcRenderer.invoke('shell:open-folder', targetPath),
