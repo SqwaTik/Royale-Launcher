@@ -9,6 +9,8 @@
   "scripts": {
     "dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && set ELECTRON_RUN_AS_NODE=&& set VITE_DEV_SERVER_URL=http://127.0.0.1:5173&& electron .\"",
     "build": "vite build",
+    "client:pack": "node scripts/build-client-package.mjs",
+    "client:pack:1.21.11": "node scripts/build-client-package.mjs 1.21.11",
     "start": "npm run build && set ELECTRON_RUN_AS_NODE=&& electron .",
     "dist:win": "npm run dist:win:setup",
     "dist:win:setup": "npm run build && electron-builder --win nsis",

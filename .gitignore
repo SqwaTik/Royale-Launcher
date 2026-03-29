@@ -1,6 +1,8 @@
 node_modules/
 dist-app/
 dist-renderer/
+.client-package/
+.smoke-run/
 preview-*.png
 *.log
 

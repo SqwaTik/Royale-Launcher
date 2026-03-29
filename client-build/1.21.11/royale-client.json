@@ -1,0 +1,8 @@
+{
+  "type": "fabric-instance",
+  "profileName": "Royale Master 1.21.11",
+  "minecraftVersion": "1.21.11",
+  "fabricLoaderVersion": "0.18.4",
+  "gameDir": ".",
+  "icon": "Grass"
+}

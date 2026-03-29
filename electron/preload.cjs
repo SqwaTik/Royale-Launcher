@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('royaleApi', {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (payload) => ipcRenderer.invoke('settings:save', payload),
   getMemoryProfile: () => ipcRenderer.invoke('system:get-memory-profile'),
+  getStorageInfo: (targetPath) => ipcRenderer.invoke('system:get-storage-info', targetPath),
   checkLauncherUpdate: () => ipcRenderer.invoke('launcher:check-update'),
   pickFolder: () => ipcRenderer.invoke('dialog:pick-folder'),
   openFolder: (targetPath) => ipcRenderer.invoke('shell:open-folder', targetPath),

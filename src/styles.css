@@ -191,12 +191,12 @@ input {
 
 .rail__nav {
   width: 100%;
-  min-height: 96px;
+  min-height: 82px;
   display: grid;
   justify-items: center;
   align-content: center;
-  gap: 8px;
-  padding: 14px 10px;
+  gap: 7px;
+  padding: 12px 8px;
   border-radius: 22px;
   border: 1px solid transparent;
   background: transparent;
@@ -246,8 +246,10 @@ input {
 }
 
 .rail__nav-label {
-  font-size: 10px;
-  letter-spacing: 0.15em;
+  font-size: 8px;
+  letter-spacing: 0.04em;
+  line-height: 1.15;
+  white-space: nowrap;
   text-transform: uppercase;
 }
 
@@ -324,11 +326,14 @@ input {
   grid-template-columns: minmax(420px, 1fr) minmax(420px, 0.92fr);
   gap: 22px;
   padding: 84px 28px 28px;
+  align-items: stretch;
 }
 
 .settings {
-  padding: 92px 28px 28px;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 84px 28px 28px;
+  overflow: hidden;
 }
 
 .hero.has-update-banner,
@@ -348,6 +353,7 @@ input {
 
 .hero__column--main {
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -361,7 +367,6 @@ input {
 .section-label,
 .field__label,
 .feature-stage__badge,
-.feature-stage__status span,
 .feature-detail span,
 .version-item__copy span,
 .catalog-row__copy span {
@@ -391,6 +396,10 @@ input {
   letter-spacing: 0.01em;
 }
 
+.settings h1 {
+  font-size: clamp(44px, 4vw, 60px);
+}
+
 .hero__lead,
 .settings__lead,
 .version-dock__lead,
@@ -415,11 +424,12 @@ input {
 
 .version-dock {
   min-height: 0;
-  flex: 0 0 auto;
-  align-self: flex-start;
+  flex: 1;
+  align-self: stretch;
   display: flex;
   flex-direction: column;
   padding: 22px;
+  margin-bottom: 24px;
   contain: layout paint;
 }
 
@@ -451,6 +461,9 @@ input {
 .version-dock__viewport {
   position: relative;
   margin-top: 18px;
+  min-height: 0;
+  flex: 1;
+  display: flex;
   overflow: hidden;
   border-radius: 24px;
 }
@@ -468,8 +481,9 @@ input {
 
 .version-dock__list {
   display: grid;
+  flex: 1;
   gap: 10px;
-  max-height: 340px;
+  max-height: none;
   padding: 0 10px 18px 0;
 }
 
@@ -555,12 +569,14 @@ input {
 }
 
 .feature-stage {
+  position: relative;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
   border-radius: 32px;
   border: 1px solid var(--stroke-1);
   background: rgba(7, 10, 15, 0.9);
+  display: flex;
   contain: layout paint;
 }
 
@@ -568,26 +584,36 @@ input {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(180deg, rgba(8, 10, 14, 0.12), rgba(8, 10, 14, 0.68) 58%, rgba(8, 10, 14, 0.9)),
-    radial-gradient(circle at 82% 18%, rgba(255, 191, 103, 0.18), transparent 16%),
-    url("/royale-backmenu.png") center / cover no-repeat;
+    linear-gradient(180deg, rgba(8, 10, 14, 0.18), rgba(8, 10, 14, 0.62) 34%, rgba(8, 10, 14, 0.92)),
+    radial-gradient(circle at 82% 18%, rgba(255, 191, 103, 0.14), transparent 18%);
   transform: scale(1.02);
+  filter: saturate(1.04);
+}
+
+.feature-stage__art-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.26;
 }
 
 .feature-stage__overlay {
   position: relative;
   z-index: 1;
-  height: 100%;
+  min-height: 0;
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 22px 24px 24px;
+  gap: 12px;
+  padding: 18px 20px 18px;
 }
 
 .feature-stage__badge {
   align-self: flex-start;
-  min-height: 36px;
-  padding: 0 16px;
+  min-height: 34px;
+  padding: 0 14px;
   display: inline-flex;
   align-items: center;
   border-radius: 999px;
@@ -600,14 +626,16 @@ input {
 
 .feature-stage__panel {
   width: min(420px, 100%);
-  max-height: calc(100% - 194px);
-  margin-top: clamp(108px, 11vh, 142px);
+  max-width: 100%;
   margin-left: auto;
-  overflow: auto;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 20px;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 14px;
   border-radius: 28px;
   background:
     linear-gradient(180deg, rgba(16, 22, 31, 0.94), rgba(9, 12, 18, 0.96)),
@@ -616,46 +644,88 @@ input {
   contain: layout paint;
 }
 
+.feature-stage__visual {
+  --feature-glow: rgba(255, 197, 121, 0.24);
+  --feature-glow-position: 18% 24%;
+  position: relative;
+  min-height: 116px;
+  flex: 0 0 116px;
+  overflow: hidden;
+  padding: 0;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(6, 9, 13, 0.24);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.feature-stage__visual-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.88;
+  z-index: 0;
+}
+
+.feature-stage__visual::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at var(--feature-glow-position), var(--feature-glow), transparent 24%),
+    linear-gradient(180deg, rgba(8, 11, 16, 0.06), rgba(8, 11, 16, 0.52)),
+    linear-gradient(90deg, rgba(8, 11, 16, 0.28), rgba(8, 11, 16, 0.08) 34%, rgba(8, 11, 16, 0.34));
+  z-index: 1;
+  pointer-events: none;
+}
+
+.feature-stage__visual--next {
+  --feature-glow: rgba(255, 214, 135, 0.22);
+  --feature-glow-position: 78% 16%;
+}
+
+.feature-stage__visual--alt {
+  --feature-glow: rgba(132, 193, 255, 0.2);
+  --feature-glow-position: 22% 18%;
+}
+
+.feature-stage__visual--legacy {
+  --feature-glow: rgba(255, 146, 104, 0.18);
+  --feature-glow-position: 80% 20%;
+}
+
+.feature-stage__visual--classic {
+  --feature-glow: rgba(155, 255, 187, 0.16);
+  --feature-glow-position: 24% 16%;
+}
+
 .feature-stage__header h2 {
-  margin: 8px 0 0;
-  font-size: clamp(56px, 6vw, 74px);
+  margin: 2px 0 0;
+  font-size: clamp(40px, 3.6vw, 52px);
   line-height: 0.9;
 }
 
 .feature-stage__title {
-  margin: 10px 0 0;
-  font-size: 19px;
+  margin: 4px 0 0;
+  font-size: 15px;
   font-weight: 700;
   color: var(--gold-0);
 }
 
 .feature-stage__lead {
-  margin-top: 10px;
-  font-size: 14px;
-}
-
-.feature-stage__status {
-  padding: 14px 16px;
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-}
-
-.feature-stage__status span {
-  display: block;
-  margin-bottom: 8px;
-  color: var(--text-faint);
-}
-
-.feature-stage__status strong {
-  display: block;
-  font-size: 14px;
-  line-height: 1.55;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
 }
 
 .soft-button,
 .primary-action {
-  min-height: 58px;
+  min-height: 54px;
   border-radius: 22px;
   transition: transform 150ms ease, background 150ms ease, opacity 150ms ease;
 }
@@ -682,8 +752,8 @@ input {
   overflow: hidden;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 18px;
+  justify-content: flex-start;
+  gap: 12px;
   padding: 0 20px;
   background: linear-gradient(135deg, var(--gold-0), var(--gold-1) 52%, var(--gold-2));
   color: #17120d;
@@ -698,8 +768,7 @@ input {
   background: linear-gradient(90deg, rgba(36, 212, 123, 0.92), rgba(119, 255, 178, 0.96));
 }
 
-.primary-action__body,
-.primary-action__side {
+.primary-action__body {
   position: relative;
   z-index: 1;
 }
@@ -713,32 +782,15 @@ input {
 }
 
 .primary-action__title {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 800;
   line-height: 1;
 }
 
 .primary-action__meta {
-  font-size: 12px;
+  font-size: 11px;
   color: rgba(23, 18, 13, 0.72);
   line-height: 1.45;
-}
-
-.primary-action__side {
-  flex: 0 0 auto;
-  min-width: 78px;
-  height: 42px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 12px;
-  border-radius: 16px;
-  background: rgba(17, 23, 33, 0.12);
-  border: 1px solid rgba(17, 23, 33, 0.08);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
 }
 
 .primary-action.is-busy {
@@ -754,14 +806,8 @@ input {
   width: var(--progress, 0%);
 }
 
-.primary-action.is-busy .primary-action__meta,
-.primary-action.is-busy .primary-action__side {
+.primary-action.is-busy .primary-action__meta {
   color: rgba(246, 240, 231, 0.82);
-}
-
-.primary-action.is-busy .primary-action__side {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.08);
 }
 
 .primary-action.is-locked {
@@ -775,19 +821,18 @@ input {
   display: none;
 }
 
-.primary-action.is-locked .primary-action__meta,
-.primary-action.is-locked .primary-action__side {
+.primary-action.is-locked .primary-action__meta {
   color: rgba(246, 240, 231, 0.58);
 }
 
 .feature-stage__details {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 12px;
+  gap: 10px;
 }
 
 .feature-detail {
-  padding: 14px 16px;
+  padding: 10px 12px;
   border-radius: 20px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.07);
@@ -805,12 +850,11 @@ input {
 
 .feature-detail strong {
   display: block;
-  font-size: 13px;
-  line-height: 1.55;
+  font-size: 11px;
+  line-height: 1.4;
   word-break: break-word;
 }
 
-.feature-stage__hint,
 .feature-stage__status-line {
   margin: 0;
   font-size: 12px;
@@ -828,18 +872,26 @@ input {
 
 .settings-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.76fr);
+  flex: 1;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.82fr);
   grid-template-areas:
     "path memory"
-    "java java"
-    "versions versions";
+    "java versions";
   gap: 18px;
-  margin-top: 28px;
+  margin-top: 22px;
+  align-items: stretch;
 }
 
 .settings-card {
   padding: 22px;
   contain: layout paint;
+}
+
+.settings-card--path,
+.settings-card--memory {
+  display: flex;
+  flex-direction: column;
 }
 
 .settings-card--path {
@@ -856,6 +908,9 @@ input {
 
 .settings-card--versions {
   grid-area: versions;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .field {
@@ -925,6 +980,7 @@ input {
 .settings-note {
   margin-top: 14px;
   font-size: 13px;
+  line-height: 1.5;
 }
 
 .settings-note--compact {
@@ -942,7 +998,8 @@ input {
 .catalog-list {
   display: grid;
   gap: 10px;
-  max-height: 280px;
+  max-height: none;
+  flex: 1;
 }
 
 .feature-stage__panel::-webkit-scrollbar,
@@ -992,8 +1049,6 @@ input {
 
   .feature-stage__panel {
     width: 100%;
-    max-height: none;
-    margin-top: 86px;
   }
 
   .settings-grid {
@@ -1003,6 +1058,10 @@ input {
       "memory"
       "java"
       "versions";
+  }
+
+  .settings {
+    overflow: auto;
   }
 }
 
@@ -1019,7 +1078,7 @@ input {
   }
 
   .rail__nav {
-    min-height: 90px;
+    min-height: 82px;
   }
 
   .hero,

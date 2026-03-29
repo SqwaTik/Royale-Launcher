@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+const VERSION_ART_IMAGES = {
+  '1.21.11': new URL('./assets/version-art/1.21.11.jpg', import.meta.url).href,
+  '26.1': new URL('./assets/version-art/26.1.jpg', import.meta.url).href,
+  '1.21.4': new URL('./assets/version-art/1.21.4.png', import.meta.url).href,
+  '1.16.5': new URL('./assets/version-art/1.16.5.jpg', import.meta.url).href,
+  '1.12.2': new URL('./assets/version-art/1.12.2.png', import.meta.url).href
+}
+
 const DEFAULT_SETTINGS = {
   installFolder: 'C:\\Royale',
   javaArgs: '',
@@ -44,6 +52,61 @@ const DEFAULT_MEMORY_PROFILE = {
   recommendedMemoryMb: 4096
 }
 
+const DEFAULT_STORAGE_INFO = {
+  available: false,
+  drive: '',
+  freeBytes: 0,
+  totalBytes: 0
+}
+
+const VERSION_ART = {
+  '1.21.11': {
+    eyebrow: 'Пейзаж мира',
+    title: 'Вишневые биомы',
+    detail: 'Главная линия Royale Master для Fabric 1.21.11.',
+    accent: 'Основная ветка',
+    tone: 'main',
+    image: VERSION_ART_IMAGES['1.21.11'],
+    position: 'center center'
+  },
+  '26.1': {
+    eyebrow: 'Новая линия',
+    title: 'Открытые просторы',
+    detail: 'Пейзаж для будущей ветки Royale Master 26.1.',
+    accent: 'Скоро',
+    tone: 'next',
+    image: VERSION_ART_IMAGES['26.1'],
+    position: 'center center'
+  },
+  '1.21.4': {
+    eyebrow: 'Творческий мир',
+    title: 'Большие постройки',
+    detail: 'Ландшафт и архитектура для линии 1.21.4.',
+    accent: 'Скоро',
+    tone: 'alt',
+    image: VERSION_ART_IMAGES['1.21.4'],
+    position: 'center 34%'
+  },
+  '1.16.5': {
+    eyebrow: 'Легаси-линия',
+    title: 'Адские земли',
+    detail: 'Классическая атмосфера Nether Update для 1.16.5.',
+    accent: 'Legacy',
+    tone: 'legacy',
+    image: VERSION_ART_IMAGES['1.16.5'],
+    position: 'center 28%'
+  },
+  '1.12.2': {
+    eyebrow: 'Классика',
+    title: 'Старый мир',
+    detail: 'Классический пейзаж Minecraft для ветки 1.12.2.',
+    accent: 'Classic',
+    tone: 'classic',
+    image: VERSION_ART_IMAGES['1.12.2'],
+    position: 'center center'
+  }
+}
+
 const TEXT = {
   appName: 'Royale Launcher',
   home: 'Главная',
@@ -70,19 +133,17 @@ const TEXT = {
   actionDownloading: 'Загрузка',
   actionInstalling: 'Установка',
   actionCopying: 'Замена файлов',
-  stateInstalled: 'Установлено',
   statePending: 'Доступно',
   stateSoon: 'Скоро',
   stateReady: 'Готово',
-  versionReady: 'Версия установлена и готова к запуску.',
-  versionInstall: 'Клиент еще не установлен. Нажмите «Скачать», чтобы поставить или обновить сборку.',
+  versionInstall: 'Клиент еще не установлен. Нажмите «Скачать», чтобы подготовить Minecraft с клиентом Royale Master.',
   versionSoon: 'Эта версия пока не подключена.',
-  progressHint: 'Во время установки прогресс появится прямо внутри кнопки.',
-  objectUnit: 'объектов',
   updateLabel: 'Доступно обновление лаунчера',
   updateAction: 'Обновить',
   settingsLead: 'Изменения сохраняются автоматически, а AUTO подбирает память по вашему ПК.',
   settingsVersions: 'Доступные версии',
+  storageLabel: 'Свободное место',
+  storageUnknown: 'Свободное место определится после выбора диска.',
   launchError: 'Операция завершилась с ошибкой'
 }
 
@@ -169,33 +230,9 @@ function getProgressTitle(progressState) {
   return TEXT.actionPreparing
 }
 
-function getProgressMeta(progressState) {
-  const percent = getProgressPercent(progressState)
-
-  if ((progressState.stage === 'extract' || progressState.stage === 'copy') && progressState.total > 0) {
-    return `${progressState.current} / ${progressState.total} ${TEXT.objectUnit}`
-  }
-
-  return percent > 0 ? `${percent}%` : 'Подключение'
-}
-
-function getProgressCaption(progressState) {
-  const percent = getProgressPercent(progressState)
-
-  if (progressState.stage === 'download') {
-    return `Загружаем пакет версии · ${percent}%`
-  }
-
-  if ((progressState.stage === 'extract' || progressState.stage === 'copy') && progressState.total > 0) {
-    return `Обновляем клиент · ${progressState.current}/${progressState.total} · ${percent}%`
-  }
-
-  return 'Подготавливаем установку версии'
-}
-
 function getVersionStateChip(entry, selectedVersion, versionState) {
   if (entry.versionName === selectedVersion && versionState.installed) {
-    return { label: TEXT.stateInstalled, tone: 'ready' }
+    return { label: TEXT.stateReady, tone: 'ready' }
   }
 
   if (entry.source) {
@@ -208,6 +245,21 @@ function getVersionStateChip(entry, selectedVersion, versionState) {
 function formatSystemMemory(memoryProfile) {
   const totalGb = Math.max(1, Math.round((memoryProfile.totalMemoryMb || 0) / 1024))
   return `Система: ${totalGb} GB · AUTO: ${memoryProfile.recommendedMemoryMb} MB`
+}
+
+function formatBytes(bytes) {
+  const value = Number(bytes) || 0
+  if (value <= 0) return '0 GB'
+  const gb = value / (1024 ** 3)
+  return `${gb >= 100 ? gb.toFixed(0) : gb.toFixed(1)} GB`
+}
+
+function formatStorageInfo(storageInfo) {
+  if (!storageInfo.available) {
+    return TEXT.storageUnknown
+  }
+
+  return `${storageInfo.drive} · ${formatBytes(storageInfo.freeBytes)} свободно из ${formatBytes(storageInfo.totalBytes)}`
 }
 
 function App() {
@@ -225,15 +277,16 @@ function App() {
   const [statusText, setStatusText] = useState('')
   const [updateInfo, setUpdateInfo] = useState(DEFAULT_UPDATE_INFO)
   const [memoryProfile, setMemoryProfile] = useState(DEFAULT_MEMORY_PROFILE)
+  const [storageInfo, setStorageInfo] = useState(DEFAULT_STORAGE_INFO)
 
   const selectedProfile = useMemo(
     () => settings.versions.find((entry) => entry.versionName === selectedVersion) || settings.versions[0],
     [settings, selectedVersion]
   )
+  const selectedArt = VERSION_ART[selectedVersion] || VERSION_ART['1.21.11']
 
   useEffect(() => {
     let offProgress = () => {}
-    let offStatus = () => {}
 
     async function bootstrap() {
       const payload = await api.getSettings()
@@ -252,16 +305,21 @@ function App() {
         await api.saveSettings(nextPayload)
       }
 
-      const [state, update, memory] = await Promise.all([
-        api.getVersionState(nextPayload.lastSelectedVersion),
-        api.checkLauncherUpdate(),
-        api.getMemoryProfile()
-      ])
-
+      const state = await api.getVersionState(nextPayload.lastSelectedVersion)
       setVersionState({ ...DEFAULT_VERSION_STATE, ...state })
-      setUpdateInfo({ ...DEFAULT_UPDATE_INFO, ...update })
-      setMemoryProfile({ ...DEFAULT_MEMORY_PROFILE, ...memory })
       autosaveReadyRef.current = true
+
+      api.checkLauncherUpdate()
+        .then((update) => setUpdateInfo({ ...DEFAULT_UPDATE_INFO, ...update }))
+        .catch(() => {})
+
+      api.getMemoryProfile()
+        .then((memory) => setMemoryProfile({ ...DEFAULT_MEMORY_PROFILE, ...memory }))
+        .catch(() => {})
+
+      api.getStorageInfo(nextPayload.installFolder)
+        .then((storage) => setStorageInfo({ ...DEFAULT_STORAGE_INFO, ...storage }))
+        .catch(() => {})
     }
 
     bootstrap()
@@ -270,13 +328,8 @@ function App() {
       setInstallProgress({ ...DEFAULT_PROGRESS, ...payload })
     })
 
-    offStatus = api.onInstallStatus(({ message }) => {
-      setStatusText(message)
-    })
-
     return () => {
       offProgress()
-      offStatus()
       if (autosaveTimerRef.current) {
         clearTimeout(autosaveTimerRef.current)
       }
@@ -291,9 +344,15 @@ function App() {
     }
 
     autosaveTimerRef.current = setTimeout(async () => {
+      const parsedMemoryMb = Number(draft.memoryMb)
+      const hasValidMemory = Number.isFinite(parsedMemoryMb) && parsedMemoryMb >= 1024
+      if (String(draft.memoryMb).trim() && !hasValidMemory) {
+        return
+      }
+
       const nextSettings = {
         ...draft,
-        memoryMb: Math.max(1024, Number(draft.memoryMb) || 4096),
+        memoryMb: hasValidMemory ? parsedMemoryMb : settings.memoryMb,
         lastSelectedVersion: selectedVersion
       }
       const previousInstallFolder = settings.installFolder
@@ -321,12 +380,30 @@ function App() {
     }
   }, [api, draft.installFolder, draft.javaArgs, draft.memoryMb])
 
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadStorageInfo() {
+      const info = await api.getStorageInfo(draft.installFolder)
+      if (!cancelled) {
+        setStorageInfo({ ...DEFAULT_STORAGE_INFO, ...info })
+      }
+    }
+
+    loadStorageInfo()
+
+    return () => {
+      cancelled = true
+    }
+  }, [api, draft.installFolder])
+
   async function refreshVersionState(versionName) {
     const state = await api.getVersionState(versionName)
     setVersionState({ ...DEFAULT_VERSION_STATE, ...state })
   }
 
   async function selectVersion(nextVersion) {
+    setStatusText('')
     setSelectedVersion(nextVersion)
     const nextSettings = { ...settings, lastSelectedVersion: nextVersion }
     setSettings(nextSettings)
@@ -338,6 +415,7 @@ function App() {
     if (busy || (!versionState.installed && !versionState.hasSource)) return
 
     setBusy(true)
+    setStatusText('')
     setInstallProgress(DEFAULT_PROGRESS)
 
     try {
@@ -389,20 +467,19 @@ function App() {
         : TEXT.actionUnavailable
 
   const buttonMeta = busy
-    ? getProgressMeta(installProgress)
+    ? ''
     : versionState.installed
-      ? 'Клиент готов к запуску'
+      ? 'Откроет профиль Royale Master'
       : versionState.hasSource
-        ? 'Скачает или обновит файлы клиента'
+        ? 'Установит клиент Royale Master'
         : 'Версия появится позже'
 
-  const buttonSide = busy ? `${getProgressPercent(installProgress)}%` : ''
   const buttonDisabled = busy || (!versionState.installed && !versionState.hasSource)
 
   const featureLead = versionState.installed
-    ? TEXT.versionReady
+    ? `Отдельный клиент ${selectedProfile?.title || 'Royale Master'} для Minecraft ${selectedProfile?.versionName || selectedVersion}.`
     : versionState.hasSource
-      ? selectedProfile?.notes || TEXT.versionInstall
+      ? `Подготовит отдельный профиль ${selectedProfile?.title || 'Royale Master'} в Minecraft Launcher.`
       : TEXT.versionSoon
 
   return (
@@ -493,24 +570,33 @@ function App() {
               </div>
 
               <aside className="feature-stage">
-                <div className="feature-stage__art" />
+                <div className="feature-stage__art">
+                  <img
+                    className="feature-stage__art-image"
+                    src={selectedArt.image}
+                    alt=""
+                    style={{ objectPosition: selectedArt.position || 'center center' }}
+                  />
+                </div>
 
                 <div className="feature-stage__overlay">
                   <span className="feature-stage__badge">{TEXT.featureBadge}</span>
 
                   <div className="feature-stage__panel">
+                    <div className={`feature-stage__visual feature-stage__visual--${selectedArt.tone}`}>
+                      <img
+                        className="feature-stage__visual-image"
+                        src={selectedArt.image}
+                        alt=""
+                        style={{ objectPosition: selectedArt.position || 'center center' }}
+                      />
+                    </div>
+
                     <div className="feature-stage__header">
                       <span className="section-label">{TEXT.featureLabel}</span>
                       <h2>{selectedProfile?.versionName || '-'}</h2>
                       <p className="feature-stage__title">{selectedProfile?.title || 'Royale Master'}</p>
                       <p className="feature-stage__lead">{featureLead}</p>
-                    </div>
-
-                    <div className="feature-stage__status">
-                      <div>
-                        <span>{versionState.installed ? TEXT.stateInstalled : versionState.hasSource ? TEXT.statePending : TEXT.stateSoon}</span>
-                        <strong>{versionState.installed ? TEXT.versionReady : versionState.hasSource ? TEXT.versionInstall : TEXT.versionSoon}</strong>
-                      </div>
                     </div>
 
                     <div className="feature-stage__details">
@@ -524,17 +610,15 @@ function App() {
                       className={`primary-action ${busy ? 'is-busy' : ''} ${buttonDisabled ? 'is-locked' : ''}`}
                       onClick={handlePrimaryAction}
                       disabled={buttonDisabled}
-                      style={{ '--progress': `${Math.max(getProgressPercent(installProgress), installProgress.stage === 'prepare' ? 12 : 0)}%` }}
+                      style={{ '--progress': `${getProgressPercent(installProgress)}%` }}
                     >
                       <span className="primary-action__fill" />
                       <span className="primary-action__body">
                         <span className="primary-action__title">{buttonTitle}</span>
-                        <span className="primary-action__meta">{buttonMeta}</span>
+                        {buttonMeta ? <span className="primary-action__meta">{buttonMeta}</span> : null}
                       </span>
-                      {buttonSide ? <span className="primary-action__side">{buttonSide}</span> : null}
                     </button>
 
-                    {busy ? <p className="feature-stage__hint">{getProgressCaption(installProgress)}</p> : null}
                     {statusText ? <p className="feature-stage__status-line">{statusText}</p> : null}
                   </div>
                 </div>
@@ -557,6 +641,9 @@ function App() {
                       onChange={(event) => updateDraftField('installFolder', event.target.value)}
                     />
                   </label>
+                  <p className="settings-note settings-note--compact">
+                    {TEXT.storageLabel}: {formatStorageInfo(storageInfo)}
+                  </p>
 
                   <div className="settings-actions">
                     <button className="soft-button" onClick={handleBrowseFolder}>
@@ -573,9 +660,9 @@ function App() {
                     <span className="field__label">{TEXT.memoryShortLabel}</span>
                     <div className="field__control field__control--with-action">
                       <input
-                        type="number"
-                        min="1024"
-                        step="512"
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
                         value={draft.memoryMb}
                         onChange={(event) => updateDraftField('memoryMb', event.target.value)}
                       />
