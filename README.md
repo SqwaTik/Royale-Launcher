@@ -5,19 +5,25 @@
 </p>
 
 <p align="center">
-  Лаунчер для <strong>модифицированного Minecraft-клиента Royale Master</strong>.
-  Он скачивает готовую сборку через GitHub Releases, обновляет файлы клиента в выбранной папке и запускает его из одного окна.
+  <strong>Royale Launcher</strong> — лаунчер Minecraft для клиента <strong>Royale Master</strong>.
+  Он помогает установить нужную сборку, обновить её в пару кликов и запустить без лишней путаницы с папками.
 </p>
 
 <p align="center">
   <a href="https://github.com/SqwaTik/Royale-Launcher/releases/latest">Последний релиз</a>
   ·
-  <a href="https://github.com/SqwaTik/Royale-Launcher/releases/latest/download/RoyaleLauncherSetup.exe">Установщик</a>
-  ·
-  <a href="https://github.com/SqwaTik/Royale-Launcher/releases/latest/download/RoyaleLauncherPortable.exe">Portable</a>
-  ·
-  <a href="https://github.com/SqwaTik/Royale-Launcher/releases/latest/download/1.21.11.zip">Клиент 1.21.11</a>
+  <a href="https://github.com/SqwaTik/Royale-Launcher/releases/latest/download/RoyaleLauncherInstaller.exe">Скачать Installer</a>
 </p>
+
+## Что это
+
+Royale Launcher создан для игроков Royale Master.
+
+- Показывает доступные версии клиента в одном окне.
+- Устанавливает клиент в папку `C:\Royale` по умолчанию.
+- Запускает клиент напрямую и умеет работать в трее, пока открыт Minecraft.
+- Позволяет настроить память Java и дополнительные аргументы запуска.
+- Автоматически подбирает память для слабых и средних ПК через режим `AUTO`.
 
 ## Скриншоты
 
@@ -25,73 +31,35 @@
 | --- | --- |
 | ![Главный экран](docs/assets/preview-home.png) | ![Экран настроек](docs/assets/preview-settings.png) |
 
-## Скачать
+## Как установить
 
-- Последний релиз: [github.com/SqwaTik/Royale-Launcher/releases/latest](https://github.com/SqwaTik/Royale-Launcher/releases/latest)
-- Установщик: [RoyaleLauncherSetup.exe](https://github.com/SqwaTik/Royale-Launcher/releases/latest/download/RoyaleLauncherSetup.exe)
-- Портативная версия: [RoyaleLauncherPortable.exe](https://github.com/SqwaTik/Royale-Launcher/releases/latest/download/RoyaleLauncherPortable.exe)
-- Текущий пакет клиента: [1.21.11.zip](https://github.com/SqwaTik/Royale-Launcher/releases/latest/download/1.21.11.zip)
+1. Откройте [последний релиз](https://github.com/SqwaTik/Royale-Launcher/releases/latest).
+2. Скачайте `RoyaleLauncherInstaller.exe`.
+3. Запустите установщик и выберите, нужны ли ярлыки на рабочем столе и в меню Пуск.
+4. После установки откройте лаунчер и выберите нужную версию клиента.
 
-## Что умеет лаунчер
+## Как начать играть
 
-- Показывает фиксированный список версий, который задает владелец проекта, а не пользователь.
-- Использует одну главную кнопку: `Скачать`, если версия еще не установлена, и `Запустить`, если она уже есть.
-- По умолчанию ставит клиент в `C:\Royale\<версия>` и может обновлять уже существующую папку поверх старых файлов.
-- Сохраняет изменения в настройках автоматически после каждого редактирования.
-- Проверяет GitHub Releases и показывает баннер обновления, когда выходит новая версия лаунчера.
-- Поддерживает два формата распространения: `Setup` и `Portable`.
+1. Откройте `Royale Launcher`.
+2. На главной странице выберите версию клиента.
+3. Нажмите `Скачать`, если клиент ещё не установлен.
+4. Дождитесь установки и нажмите `Запустить`.
 
-## Поддерживаемые версии
+## Что можно настроить
 
-- `1.21.11`
-- `26.1`
-- `1.21.4`
-- `1.16.5`
-- `1.12.2`
+- Папку установки клиента.
+- Объём памяти Java.
+- Автоматический режим памяти `AUTO`.
+- Дополнительные Java-аргументы.
+- Поведение лаунчера при запуске и закрытии Minecraft.
 
-## Как устроены релизы
+## Поддержка платформ
 
-Лаунчер берет список версий из файла [`electron/version-catalog.json`](electron/version-catalog.json).
+- Windows: основной релиз и основной установщик.
+- Linux: сборки публикуются через CI в форматах `AppImage`, `deb` и `rpm`.
+- macOS: сборка публикуется через CI в формате `dmg`.
 
-- В интерфейсе отображаются только те версии, которые есть в каталоге.
-- Каждая версия может ссылаться на отдельный asset в GitHub Release.
-- Для `1.21.11` уже подключен пакет из `releases/latest`, поэтому ссылка не привязана к одному старому тегу.
-- Обновления самого лаунчера публикуются в этом же репозитории и подхватываются верхним баннером обновления.
+## Royale Master
 
-## Структура проекта
-
-- [`src/App.jsx`](src/App.jsx) - интерфейс лаунчера и логика страниц
-- [`src/styles.css`](src/styles.css) - стили, компоновка и визуальная часть
-- [`electron/main.cjs`](electron/main.cjs) - установка, запуск, состояние версий и проверка обновлений
-- [`electron/preload.cjs`](electron/preload.cjs) - безопасный мост API между Electron и интерфейсом
-- [`electron/version-catalog.json`](electron/version-catalog.json) - каталог версий, который редактирует владелец проекта
-- [`electron/launcher-config.json`](electron/launcher-config.json) - источник обновлений лаунчера
-- [`client-build/1.21.11/launch.bat`](client-build/1.21.11/launch.bat) - вспомогательный скрипт запуска клиента
-
-## Локальный запуск
-
-```bash
-npm install
-npm run dev
-```
-
-## Сборка Windows-версий
-
-```bash
-npm run dist:win:setup
-npm run dist:win:portable
-```
-
-Готовые сборки появляются в папке `dist-app/`.
-
-## Чеклист публикации
-
-1. Обновить код лаунчера или связанные assets.
-2. При необходимости изменить [`electron/version-catalog.json`](electron/version-catalog.json).
-3. Собрать новые `.exe`.
-4. Создать или обновить GitHub Release.
-5. Загрузить `RoyaleLauncherSetup.exe`, `RoyaleLauncherPortable.exe` и нужные клиентские пакеты.
-
-## Статус
-
-Этот репозиторий является основной точкой распространения Royale Launcher и его клиентских сборок.
+Royale Master — это отдельный клиент Minecraft с модификацией Royale.
+Лаунчер нужен для того, чтобы ставить и запускать его быстрее, чище и без ручной возни с файлами.

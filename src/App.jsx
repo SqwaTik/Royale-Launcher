@@ -1,18 +1,22 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 
 const VERSION_ART_IMAGES = {
   '1.21.11': new URL('./assets/version-art/1.21.11.jpg', import.meta.url).href,
   '26.1': new URL('./assets/version-art/26.1.jpg', import.meta.url).href,
-  '1.21.4': new URL('./assets/version-art/1.21.4.png', import.meta.url).href,
+  '1.21.4': new URL('./assets/version-art/1.21.4.jpg', import.meta.url).href,
   '1.16.5': new URL('./assets/version-art/1.16.5.jpg', import.meta.url).href,
-  '1.12.2': new URL('./assets/version-art/1.12.2.png', import.meta.url).href
+  '1.12.2': new URL('./assets/version-art/1.12.2.jpg', import.meta.url).href
 }
 
 const DEFAULT_SETTINGS = {
   installFolder: 'C:\\Royale',
   javaArgs: '',
   memoryMb: 4096,
+  autoMemoryEnabled: true,
   lastSelectedVersion: '1.21.11',
+  hideLauncherOnGameLaunch: true,
+  reopenLauncherOnGameExit: true,
+  skipCancelConfirm: false,
   versions: [
     { versionName: '1.21.11', channel: 'Основная сборка', title: 'Royale Master', source: 'client-assets/1.21.11.zip', notes: 'Готовая сборка Royale Master для модифицированного Minecraft-клиента.' },
     { versionName: '26.1', channel: 'Скоро', title: 'Версия готовится', source: '', notes: 'Эта версия появится позже.' },
@@ -26,7 +30,11 @@ const DEFAULT_PROGRESS = {
   stage: 'idle',
   progress: 0,
   current: 0,
-  total: 0
+  total: 0,
+  section: '',
+  sectionCurrent: 0,
+  sectionTotal: 0,
+  label: ''
 }
 
 const DEFAULT_VERSION_STATE = {
@@ -35,9 +43,10 @@ const DEFAULT_VERSION_STATE = {
   hasSource: false,
   sourceKind: 'none',
   launchableFile: '',
-  title: '',
   channel: '',
-  notes: ''
+  notes: '',
+  running: false,
+  runningPid: 0
 }
 
 const DEFAULT_UPDATE_INFO = {
@@ -49,6 +58,8 @@ const DEFAULT_UPDATE_INFO = {
 
 const DEFAULT_MEMORY_PROFILE = {
   totalMemoryMb: 8192,
+  freeMemoryMb: 4096,
+  reserveMb: 2048,
   recommendedMemoryMb: 4096
 }
 
@@ -59,48 +70,38 @@ const DEFAULT_STORAGE_INFO = {
   totalBytes: 0
 }
 
+const DEFAULT_APP_VERSION = '0.1.0'
+
+const HERO_FACTS = [
+  'Факт Royale: хороший лаунчер должен исчезать в тень, а не мешать запуску мира.',
+  'Факт Minecraft: меньше лишних эффектов в лаунчере — быстрее первый вход в игру.',
+  'Факт Royale: AUTO-память подбирается прямо перед запуском, а не живёт старым значением.',
+  'Факт Minecraft: чистый путь клиента помогает ставить обновления без лишнего мусора.',
+  'Факт Royale: один запуск, один клиент, одна понятная папка без лишних хвостов.'
+]
+
 const VERSION_ART = {
   '1.21.11': {
-    eyebrow: 'Пейзаж мира',
-    title: 'Вишневые биомы',
-    detail: 'Главная линия Royale Master для Fabric 1.21.11.',
-    accent: 'Основная ветка',
     tone: 'main',
     image: VERSION_ART_IMAGES['1.21.11'],
     position: 'center center'
   },
   '26.1': {
-    eyebrow: 'Новая линия',
-    title: 'Открытые просторы',
-    detail: 'Пейзаж для будущей ветки Royale Master 26.1.',
-    accent: 'Скоро',
     tone: 'next',
     image: VERSION_ART_IMAGES['26.1'],
     position: 'center center'
   },
   '1.21.4': {
-    eyebrow: 'Творческий мир',
-    title: 'Большие постройки',
-    detail: 'Ландшафт и архитектура для линии 1.21.4.',
-    accent: 'Скоро',
     tone: 'alt',
     image: VERSION_ART_IMAGES['1.21.4'],
     position: 'center 34%'
   },
   '1.16.5': {
-    eyebrow: 'Легаси-линия',
-    title: 'Адские земли',
-    detail: 'Классическая атмосфера Nether Update для 1.16.5.',
-    accent: 'Legacy',
     tone: 'legacy',
     image: VERSION_ART_IMAGES['1.16.5'],
     position: 'center 28%'
   },
   '1.12.2': {
-    eyebrow: 'Классика',
-    title: 'Старый мир',
-    detail: 'Классический пейзаж Minecraft для ветки 1.12.2.',
-    accent: 'Classic',
     tone: 'classic',
     image: VERSION_ART_IMAGES['1.12.2'],
     position: 'center center'
@@ -109,10 +110,11 @@ const VERSION_ART = {
 
 const TEXT = {
   appName: 'Royale Launcher',
+  stats: 'Статистика',
   home: 'Главная',
   settings: 'Настройки',
   heroEyebrow: 'Minecraft launcher',
-  heroLead: 'Лаунчер для модифицированного Minecraft-клиента Royale Master: скачивает готовую сборку, обновляет файлы в выбранной папке и запускает ее из одного окна.',
+  heroLead: 'Лаунчер для Royale Master: ставит клиент аккуратно, запускает напрямую и не отвлекает лишним шумом.',
   chooseVersionTitle: 'Выберите версию',
   chooseVersionLead: 'Выберите нужную сборку клиента. Остальные версии открываются прокруткой внутри блока.',
   featureBadge: 'Royale Launcher',
@@ -128,6 +130,7 @@ const TEXT = {
   chooseFolder: 'Выбрать папку',
   actionInstall: 'Скачать',
   actionLaunch: 'Запустить',
+  actionRunning: 'Запущено',
   actionUnavailable: 'Скоро',
   actionPreparing: 'Подготовка',
   actionDownloading: 'Загрузка',
@@ -142,12 +145,33 @@ const TEXT = {
   updateAction: 'Обновить',
   settingsLead: 'Изменения сохраняются автоматически, а AUTO подбирает память по вашему ПК.',
   settingsVersions: 'Доступные версии',
+  settingsBehavior: 'Поведение лаунчера',
+  hideLauncherOnLaunch: 'Скрывать лаунчер в трей при запуске Minecraft',
+  hideLauncherOnLaunchHint: 'Если включено, окно исчезает из рабочего стола и остаётся в системном трее, пока игра запущена.',
+  reopenLauncherOnExit: 'Возвращать лаунчер после закрытия Minecraft',
+  reopenLauncherOnExitHint: 'Если выключить, лаунчер останется в трее и не откроется сам после выхода из игры.',
+  closeLauncherTitle: 'Закрыть лаунчер?',
+  closeLauncherLead: 'Minecraft уже запущен. Лаунчер можно закрыть, игра продолжит работать.',
+  closeLauncherConfirm: 'Да',
+  closeLauncherCancel: 'Нет',
   storageLabel: 'Свободное место',
   storageUnknown: 'Свободное место определится после выбора диска.',
   launchError: 'Операция завершилась с ошибкой'
 }
 
-const initialPage = new URLSearchParams(window.location.search).get('page') === 'settings' ? 'settings' : 'home'
+const requestedPage = new URLSearchParams(window.location.search).get('page')
+const initialPage = requestedPage === 'settings' || requestedPage === 'stats' ? requestedPage : 'home'
+
+function detectLowPerformanceDevice() {
+  try {
+    const cpuThreads = Number(window.navigator?.hardwareConcurrency) || 0
+    const deviceMemory = Number(window.navigator?.deviceMemory) || 0
+    const prefersReducedMotion = Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches)
+    return prefersReducedMotion || (cpuThreads > 0 && cpuThreads <= 4) || (deviceMemory > 0 && deviceMemory <= 4)
+  } catch {
+    return false
+  }
+}
 
 function HomeIcon() {
   return (
@@ -185,18 +209,117 @@ function CloseIcon() {
   )
 }
 
-function NavButton({ active, label, onClick, children }) {
+function PauseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M8 6v12" />
+      <path d="M16 6v12" />
+    </svg>
+  )
+}
+
+function StopIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="7" y="7" width="10" height="10" rx="1.8" />
+    </svg>
+  )
+}
+
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M5.8 12.4 10 16.6 18.4 8.2" />
+    </svg>
+  )
+}
+
+const NavButton = memo(function NavButton({ active, label, onClick, children }) {
   return (
     <button className={`rail__nav ${active ? 'is-active' : ''}`} onClick={onClick}>
       <span className="rail__nav-icon">{children}</span>
       <span className="rail__nav-label">{label}</span>
     </button>
   )
-}
+})
 
-function VersionItem({ active, version, subtitle, state, onClick }) {
+const ConfirmModal = memo(function ConfirmModal({
+  title,
+  description,
+  confirmLabel,
+  cancelLabel,
+  checkboxLabel = '',
+  checkboxChecked = false,
+  onCheckboxChange = null,
+  onConfirm,
+  onCancel
+}) {
   return (
-    <button className={`version-item ${active ? 'is-active' : ''}`} onClick={onClick}>
+    <div className="modal-backdrop" role="presentation" onClick={onCancel}>
+      <div
+        className="modal-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirm-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h3 id="confirm-title">{title}</h3>
+        <p>{description}</p>
+        {checkboxLabel ? (
+          <label className="modal-checkbox">
+            <input
+              type="checkbox"
+              checked={checkboxChecked}
+              onChange={(event) => onCheckboxChange?.(event.target.checked)}
+            />
+            <span className="modal-checkbox__box" aria-hidden="true">
+              <CheckIcon />
+            </span>
+            <span className="modal-checkbox__label">{checkboxLabel}</span>
+          </label>
+        ) : null}
+        <div className="modal-actions">
+          <button className="soft-button" onClick={onCancel}>{cancelLabel}</button>
+          <button className="primary-action primary-action--compact" onClick={onConfirm}>
+            <span className="primary-action__body">
+              <span className="primary-action__title">{confirmLabel}</span>
+            </span>
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+})
+
+const StatsStubPage = memo(function StatsStubPage({ hasUpdateBanner = false }) {
+  return (
+    <section className={`stats-page page-surface ${hasUpdateBanner ? 'has-update-banner' : ''}`}>
+      <div className="stats-page__header">
+        <span className="eyebrow">Royale analytics</span>
+        <h1>Статистика</h1>
+        <p className="stats-page__lead">
+          Раздел временно отключен, чтобы не грузить лаунчер лишним UI и фоновыми задачами.
+        </p>
+      </div>
+
+      <article className="settings-card stats-stub">
+        <span className="section-label">Заглушка</span>
+        <h3>Вкладка скрыта из меню</h3>
+        <p className="stats-page__lead">
+          Код оставлен в проекте, так что позже статистику можно вернуть без сборки с нуля.
+        </p>
+      </article>
+    </section>
+  )
+})
+
+const VersionItem = memo(function VersionItem({ active, version, subtitle, state, onClick, disabled }) {
+  return (
+    <button
+      className={`version-item ${active ? 'is-active' : ''} ${disabled ? 'is-disabled' : ''}`}
+      onClick={onClick}
+      disabled={disabled}
+    >
       <div className="version-item__copy">
         <strong>{version}</strong>
         <span>{subtitle}</span>
@@ -204,9 +327,9 @@ function VersionItem({ active, version, subtitle, state, onClick }) {
       <span className={`version-item__state version-item__state--${state.tone}`}>{state.label}</span>
     </button>
   )
-}
+})
 
-function VersionListRow({ version, subtitle, state }) {
+const VersionListRow = memo(function VersionListRow({ version, subtitle, state }) {
   return (
     <div className="catalog-row">
       <div className="catalog-row__copy">
@@ -216,7 +339,7 @@ function VersionListRow({ version, subtitle, state }) {
       <span className={`catalog-row__state catalog-row__state--${state.tone}`}>{state.label}</span>
     </div>
   )
-}
+})
 
 function getProgressPercent(progressState) {
   return Math.max(0, Math.min(100, Math.round((progressState.progress || 0) * 100)))
@@ -230,7 +353,69 @@ function getProgressTitle(progressState) {
   return TEXT.actionPreparing
 }
 
+function normalizeRemoteErrorMessage(message) {
+  const value = String(message || '').trim()
+  if (!value) {
+    return TEXT.launchError
+  }
+
+  const normalized = value
+    .replace(/^Error invoking remote method '[^']+':\s*/i, '')
+    .replace(/^Error:\s*/i, '')
+    .trim()
+
+  return normalized || TEXT.launchError
+}
+
+function formatProgressBytes(bytes) {
+  const value = Number(bytes) || 0
+  if (value <= 0) return '0 MB'
+
+  const mb = value / (1024 * 1024)
+  if (mb < 1024) {
+    return `${mb.toFixed(mb >= 100 ? 0 : 1)} MB`
+  }
+
+  return `${(mb / 1024).toFixed(1)} GB`
+}
+
+function formatProgressStatus(progressState) {
+  if (progressState.label) {
+    return progressState.label
+  }
+
+  if (progressState.stage === 'download') {
+    if (progressState.total > 0) {
+      return `Загружаю пакет ${formatProgressBytes(progressState.current)} / ${formatProgressBytes(progressState.total)}`
+    }
+
+    return `Загружаю пакет ${formatProgressBytes(progressState.current)}`
+  }
+
+  if (progressState.stage === 'extract') {
+    if (progressState.section) {
+      return `Устанавливаю ${progressState.section} ${progressState.sectionCurrent}/${progressState.sectionTotal || 1}`
+    }
+
+    return `Устанавливаю файлы ${progressState.current}/${progressState.total || 1}`
+  }
+
+  if (progressState.stage === 'copy') {
+    return `Копирую файлы ${progressState.current}/${progressState.total || 1}`
+  }
+
+  if (progressState.stage === 'prepare') {
+    return 'Подготавливаю клиент'
+  }
+
+  return ''
+}
+
 function getVersionStateChip(entry, selectedVersion, versionState) {
+  if (entry.versionName === selectedVersion && versionState.running) {
+    return { label: TEXT.actionRunning, tone: 'ready' }
+  }
+
   if (entry.versionName === selectedVersion && versionState.installed) {
     return { label: TEXT.stateReady, tone: 'ready' }
   }
@@ -244,7 +429,8 @@ function getVersionStateChip(entry, selectedVersion, versionState) {
 
 function formatSystemMemory(memoryProfile) {
   const totalGb = Math.max(1, Math.round((memoryProfile.totalMemoryMb || 0) / 1024))
-  return `Система: ${totalGb} GB · AUTO: ${memoryProfile.recommendedMemoryMb} MB`
+  const freeGb = Math.max(1, (memoryProfile.freeMemoryMb || 0) / 1024).toFixed(1)
+  return `Система: ${totalGb} GB · Свободно: ${freeGb} GB · AUTO: ${memoryProfile.recommendedMemoryMb} MB`
 }
 
 function formatBytes(bytes) {
@@ -262,10 +448,47 @@ function formatStorageInfo(storageInfo) {
   return `${storageInfo.drive} · ${formatBytes(storageInfo.freeBytes)} свободно из ${formatBytes(storageInfo.totalBytes)}`
 }
 
+function requestIdleTask(callback, timeout = 1) {
+  if (typeof window.requestIdleCallback === 'function') {
+    return window.requestIdleCallback(callback, { timeout })
+  }
+
+  return window.setTimeout(() => callback({
+    didTimeout: false,
+    timeRemaining: () => 0
+  }), timeout)
+}
+
+function cancelIdleTask(handle) {
+  if (!handle) return
+
+  if (typeof window.cancelIdleCallback === 'function') {
+    window.cancelIdleCallback(handle)
+    return
+  }
+
+  window.clearTimeout(handle)
+}
+
+function getToastToneFromMessage(message) {
+  const value = String(message || '').toLowerCase()
+  if (!value) return 'neutral'
+  if (value.includes('отмен')) return 'warning'
+  if (value.includes('установлено') || value.includes('применен')) return 'success'
+  return 'error'
+}
+
 function App() {
   const api = window.royaleApi
   const autosaveReadyRef = useRef(false)
   const autosaveTimerRef = useRef(null)
+  const updateCheckScheduledRef = useRef(false)
+  const memoryLoadedRef = useRef(false)
+  const pendingSettingsToastRef = useRef(false)
+  const toastQueueRef = useRef([])
+  const toastTimerRef = useRef(null)
+  const hiddenToastQueueRef = useRef([])
+  const lastToastStampRef = useRef({ key: '', at: 0 })
 
   const [page, setPage] = useState(initialPage)
   const [settings, setSettings] = useState(DEFAULT_SETTINGS)
@@ -273,53 +496,108 @@ function App() {
   const [selectedVersion, setSelectedVersion] = useState(DEFAULT_SETTINGS.lastSelectedVersion)
   const [versionState, setVersionState] = useState(DEFAULT_VERSION_STATE)
   const [installProgress, setInstallProgress] = useState(DEFAULT_PROGRESS)
+  const [appVersion, setAppVersion] = useState(DEFAULT_APP_VERSION)
   const [busy, setBusy] = useState(false)
+  const [actionMode, setActionMode] = useState('idle')
   const [statusText, setStatusText] = useState('')
+  const [showCloseLauncherPrompt, setShowCloseLauncherPrompt] = useState(false)
+  const [installPaused, setInstallPaused] = useState(false)
+  const [showCancelPrompt, setShowCancelPrompt] = useState(false)
+  const [skipCancelConfirm, setSkipCancelConfirm] = useState(false)
+  const [cancelRememberChoice, setCancelRememberChoice] = useState(false)
   const [updateInfo, setUpdateInfo] = useState(DEFAULT_UPDATE_INFO)
   const [memoryProfile, setMemoryProfile] = useState(DEFAULT_MEMORY_PROFILE)
   const [storageInfo, setStorageInfo] = useState(DEFAULT_STORAGE_INFO)
+  const [bootstrapped, setBootstrapped] = useState(false)
+  const [showVersionArt, setShowVersionArt] = useState(false)
+  const [activeToast, setActiveToast] = useState(null)
+  const [heroFactIndex, setHeroFactIndex] = useState(0)
+  const lowPerformanceMode = useMemo(() => detectLowPerformanceDevice(), [])
+  const deferredSelectedVersion = useDeferredValue(selectedVersion)
 
   const selectedProfile = useMemo(
     () => settings.versions.find((entry) => entry.versionName === selectedVersion) || settings.versions[0],
     [settings, selectedVersion]
   )
-  const selectedArt = VERSION_ART[selectedVersion] || VERSION_ART['1.21.11']
+  const selectedArt = VERSION_ART[deferredSelectedVersion] || VERSION_ART['1.21.11']
+  const shouldPollVersionState = page === 'home' || versionState.running || showCloseLauncherPrompt
+  const shellLiteMode = lowPerformanceMode || page === 'settings' || !showVersionArt
+  const heroFact = HERO_FACTS[heroFactIndex % HERO_FACTS.length]
+
+  function applyVersionState(nextState) {
+    startTransition(() => {
+      setVersionState({ ...DEFAULT_VERSION_STATE, ...nextState })
+    })
+  }
+
+  function processToastQueue() {
+    if (toastTimerRef.current || activeToast) {
+      return
+    }
+
+    const nextToast = toastQueueRef.current.shift()
+    if (!nextToast) {
+      return
+    }
+
+    setActiveToast(nextToast)
+    toastTimerRef.current = window.setTimeout(() => {
+      setActiveToast(null)
+      toastTimerRef.current = null
+      processToastQueue()
+    }, nextToast.duration || 5000)
+  }
+
+  function enqueueToast(message, tone = 'neutral', key = message) {
+    const normalizedMessage = String(message || '').trim()
+    if (!normalizedMessage) return
+
+    const now = Date.now()
+    if (lastToastStampRef.current.key === key && now - lastToastStampRef.current.at < 1200) {
+      return
+    }
+
+    lastToastStampRef.current = { key, at: now }
+    const nextToast = {
+      id: `${now}-${Math.random().toString(36).slice(2, 7)}`,
+      message: normalizedMessage,
+      tone,
+      duration: 5000
+    }
+
+    if (document.hidden) {
+      hiddenToastQueueRef.current.push(nextToast)
+      return
+    }
+
+    toastQueueRef.current.push(nextToast)
+    processToastQueue()
+  }
 
   useEffect(() => {
     let offProgress = () => {}
+    let offStatus = () => {}
+    let offLaunchStatus = () => {}
 
     async function bootstrap() {
-      const payload = await api.getSettings()
-      const preferredVersion = payload.versions.find((entry) => entry.versionName === payload.lastSelectedVersion && entry.source)
-      const fallbackVersion = preferredVersion?.versionName || payload.versions.find((entry) => entry.source)?.versionName || payload.lastSelectedVersion
-      const nextPayload = fallbackVersion === payload.lastSelectedVersion ? payload : { ...payload, lastSelectedVersion: fallbackVersion }
+      const bootstrapPayload = await api.getBootstrap()
+      const nextPayload = bootstrapPayload?.settings || DEFAULT_SETTINGS
+      const nextVersionState = bootstrapPayload?.versionState || DEFAULT_VERSION_STATE
+      const nextMemoryProfile = bootstrapPayload?.memoryProfile || DEFAULT_MEMORY_PROFILE
 
+      setAppVersion(String(bootstrapPayload?.appVersion || DEFAULT_APP_VERSION))
       setSettings(nextPayload)
       setDraft({
         ...nextPayload,
         javaArgs: nextPayload.javaArgs || ''
       })
+      setMemoryProfile({ ...DEFAULT_MEMORY_PROFILE, ...nextMemoryProfile })
+      memoryLoadedRef.current = true
+      setSkipCancelConfirm(Boolean(nextPayload.skipCancelConfirm))
       setSelectedVersion(nextPayload.lastSelectedVersion)
-
-      if (fallbackVersion !== payload.lastSelectedVersion) {
-        await api.saveSettings(nextPayload)
-      }
-
-      const state = await api.getVersionState(nextPayload.lastSelectedVersion)
-      setVersionState({ ...DEFAULT_VERSION_STATE, ...state })
+      applyVersionState(nextVersionState)
       autosaveReadyRef.current = true
-
-      api.checkLauncherUpdate()
-        .then((update) => setUpdateInfo({ ...DEFAULT_UPDATE_INFO, ...update }))
-        .catch(() => {})
-
-      api.getMemoryProfile()
-        .then((memory) => setMemoryProfile({ ...DEFAULT_MEMORY_PROFILE, ...memory }))
-        .catch(() => {})
-
-      api.getStorageInfo(nextPayload.installFolder)
-        .then((storage) => setStorageInfo({ ...DEFAULT_STORAGE_INFO, ...storage }))
-        .catch(() => {})
+      setBootstrapped(true)
     }
 
     bootstrap()
@@ -328,10 +606,23 @@ function App() {
       setInstallProgress({ ...DEFAULT_PROGRESS, ...payload })
     })
 
+    offStatus = api.onInstallStatus((payload) => {
+      setStatusText(String(payload?.message || ''))
+    })
+
+    offLaunchStatus = api.onLaunchStatus((payload) => {
+      setStatusText(String(payload?.message || ''))
+    })
+
     return () => {
       offProgress()
+      offStatus()
+      offLaunchStatus()
       if (autosaveTimerRef.current) {
         clearTimeout(autosaveTimerRef.current)
+      }
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current)
       }
     }
   }, [api])
@@ -364,12 +655,21 @@ function App() {
         installFolder: saved.installFolder,
         javaArgs: saved.javaArgs || '',
         memoryMb: saved.memoryMb,
+        autoMemoryEnabled: saved.autoMemoryEnabled,
+        hideLauncherOnGameLaunch: saved.hideLauncherOnGameLaunch,
+        reopenLauncherOnGameExit: saved.reopenLauncherOnGameExit,
+        skipCancelConfirm: saved.skipCancelConfirm,
         versions: saved.versions,
         lastSelectedVersion: saved.lastSelectedVersion
       }))
 
       if (saved.installFolder !== previousInstallFolder) {
         await refreshVersionState(saved.lastSelectedVersion)
+      }
+
+      if (pendingSettingsToastRef.current) {
+        pendingSettingsToastRef.current = false
+        enqueueToast('Настройки применены', 'success', 'settings-applied')
       }
     }, 260)
 
@@ -378,31 +678,165 @@ function App() {
         clearTimeout(autosaveTimerRef.current)
       }
     }
-  }, [api, draft.installFolder, draft.javaArgs, draft.memoryMb])
+  }, [api, draft.installFolder, draft.javaArgs, draft.memoryMb, draft.autoMemoryEnabled, draft.hideLauncherOnGameLaunch, draft.reopenLauncherOnGameExit, draft.skipCancelConfirm])
 
   useEffect(() => {
-    let cancelled = false
-
-    async function loadStorageInfo() {
-      const info = await api.getStorageInfo(draft.installFolder)
-      if (!cancelled) {
-        setStorageInfo({ ...DEFAULT_STORAGE_INFO, ...info })
+    function flushHiddenToasts() {
+      if (document.hidden || hiddenToastQueueRef.current.length === 0) {
+        return
       }
+
+      toastQueueRef.current.push(...hiddenToastQueueRef.current.splice(0, hiddenToastQueueRef.current.length))
+      processToastQueue()
     }
 
-    loadStorageInfo()
+    document.addEventListener('visibilitychange', flushHiddenToasts)
+    window.addEventListener('focus', flushHiddenToasts)
+
+    return () => {
+      document.removeEventListener('visibilitychange', flushHiddenToasts)
+      window.removeEventListener('focus', flushHiddenToasts)
+    }
+  }, [activeToast])
+
+  useEffect(() => {
+    if (page !== 'home') {
+      return undefined
+    }
+
+    const intervalId = window.setInterval(() => {
+      setHeroFactIndex((current) => (current + 1) % HERO_FACTS.length)
+    }, 15000)
+
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [page])
+
+  useEffect(() => {
+    if (!bootstrapped || updateCheckScheduledRef.current) return undefined
+
+    updateCheckScheduledRef.current = true
+    let cancelled = false
+    const idleHandle = requestIdleTask(() => {
+      api.checkLauncherUpdate()
+        .then((update) => {
+          if (!cancelled) {
+            startTransition(() => {
+              setUpdateInfo({ ...DEFAULT_UPDATE_INFO, ...update })
+            })
+          }
+        })
+        .catch(() => {})
+    }, 1400)
 
     return () => {
       cancelled = true
+      cancelIdleTask(idleHandle)
     }
-  }, [api, draft.installFolder])
+  }, [api, bootstrapped])
+
+  useEffect(() => {
+    if (!bootstrapped || page !== 'settings') return undefined
+
+    let cancelled = false
+    const syncMemoryProfile = () => {
+      api.getMemoryProfile()
+        .then((memory) => {
+          if (!cancelled) {
+            memoryLoadedRef.current = true
+            setMemoryProfile({ ...DEFAULT_MEMORY_PROFILE, ...memory })
+          }
+        })
+        .catch(() => {})
+    }
+
+    const idleHandle = requestIdleTask(syncMemoryProfile, 220)
+    const intervalId = window.setInterval(syncMemoryProfile, 15000)
+
+    return () => {
+      cancelled = true
+      cancelIdleTask(idleHandle)
+      window.clearInterval(intervalId)
+    }
+  }, [api, page, bootstrapped])
+
+  useEffect(() => {
+    if (!bootstrapped || page !== 'settings') return undefined
+
+    let cancelled = false
+    const idleHandle = requestIdleTask(async () => {
+      try {
+        const info = await api.getStorageInfo(draft.installFolder)
+        if (!cancelled) {
+          setStorageInfo({ ...DEFAULT_STORAGE_INFO, ...info })
+        }
+      } catch {}
+    }, 320)
+
+    return () => {
+      cancelled = true
+      cancelIdleTask(idleHandle)
+    }
+  }, [api, draft.installFolder, page, bootstrapped])
+
+  useEffect(() => {
+    if (page !== 'home' || lowPerformanceMode) {
+      setShowVersionArt(false)
+      return undefined
+    }
+
+    setShowVersionArt(false)
+    const idleHandle = requestIdleTask(() => {
+      setShowVersionArt(true)
+    }, bootstrapped ? 160 : 320)
+
+    return () => {
+      cancelIdleTask(idleHandle)
+    }
+  }, [page, selectedVersion, bootstrapped, lowPerformanceMode])
+
+  useEffect(() => {
+    if (busy || !shouldPollVersionState) return undefined
+
+    let cancelled = false
+    const intervalId = setInterval(async () => {
+      try {
+        const state = await api.getVersionState(selectedVersion)
+        if (!cancelled) {
+          applyVersionState(state)
+        }
+      } catch {}
+    }, versionState.running ? 2500 : 10000)
+
+    return () => {
+      cancelled = true
+      clearInterval(intervalId)
+    }
+  }, [api, selectedVersion, versionState.running, busy, shouldPollVersionState])
+
+  function openPage(nextPage) {
+    startTransition(() => {
+      setPage(nextPage)
+    })
+  }
 
   async function refreshVersionState(versionName) {
     const state = await api.getVersionState(versionName)
-    setVersionState({ ...DEFAULT_VERSION_STATE, ...state })
+    applyVersionState(state)
+  }
+
+  function handleCloseLauncherRequest() {
+    if (versionState.running) {
+      setShowCloseLauncherPrompt(true)
+      return
+    }
+
+    api.windowAction('close')
   }
 
   async function selectVersion(nextVersion) {
+    if (busy) return
     setStatusText('')
     setSelectedVersion(nextVersion)
     const nextSettings = { ...settings, lastSelectedVersion: nextVersion }
@@ -413,29 +847,96 @@ function App() {
 
   async function handlePrimaryAction() {
     if (busy || (!versionState.installed && !versionState.hasSource)) return
+    if (versionState.running) {
+      handleCloseLauncherRequest()
+      return
+    }
 
     setBusy(true)
+    setActionMode(versionState.installed ? 'launch' : 'install')
     setStatusText('')
     setInstallProgress(DEFAULT_PROGRESS)
 
     try {
       if (versionState.installed) {
         await api.launchVersion(selectedVersion)
+        setStatusText('')
+        await refreshVersionState(selectedVersion)
       } else {
         await api.installVersion(selectedVersion)
         await refreshVersionState(selectedVersion)
+        enqueueToast('Установлено', 'success', `installed-${selectedVersion}`)
       }
     } catch (error) {
-      setStatusText(error?.message || TEXT.launchError)
+      const message = normalizeRemoteErrorMessage(error?.message)
+      setStatusText('')
+      enqueueToast(message, getToastToneFromMessage(message), `${actionMode}-${message}`)
     } finally {
       setBusy(false)
+      setActionMode('idle')
       setInstallProgress(DEFAULT_PROGRESS)
     }
   }
 
+  async function persistSkipCancelConfirm(nextValue) {
+    pendingSettingsToastRef.current = true
+    setSkipCancelConfirm(nextValue)
+    setDraft((current) => ({ ...current, skipCancelConfirm: nextValue }))
+    const nextSettings = { ...settings, skipCancelConfirm: nextValue }
+    setSettings(nextSettings)
+    await api.saveSettings(nextSettings)
+  }
+
+  async function handlePauseInstall() {
+    if (!busy || actionMode !== 'install') return
+    const nextPaused = !installPaused
+    setInstallPaused(nextPaused)
+    await api.pauseInstall(nextPaused)
+  }
+
+  function requestCancelBusyOperation() {
+    if (!busy) return
+    if (skipCancelConfirm) {
+      void confirmCancelBusyOperation(false)
+      return
+    }
+
+    setCancelRememberChoice(false)
+    setShowCancelPrompt(true)
+  }
+
+  async function confirmCancelBusyOperation(rememberChoice) {
+    setShowCancelPrompt(false)
+    if (rememberChoice) {
+      await persistSkipCancelConfirm(true)
+    }
+
+    if (actionMode === 'install') {
+      await api.cancelInstall()
+      return
+    }
+
+    if (actionMode === 'launch') {
+      await api.cancelLaunch()
+    }
+  }
+
+  async function handleConfirmCloseLauncher() {
+    setShowCloseLauncherPrompt(false)
+    await api.windowAction('close')
+  }
+
+  useEffect(() => {
+    if (busy) return
+    setInstallPaused(false)
+    setShowCancelPrompt(false)
+    setCancelRememberChoice(false)
+  }, [busy])
+
   async function handleBrowseFolder() {
     const picked = await api.pickFolder()
     if (!picked) return
+    pendingSettingsToastRef.current = true
     setDraft((current) => ({ ...current, installFolder: picked }))
   }
 
@@ -450,50 +951,74 @@ function App() {
     await api.openExternal(updateInfo.url)
   }
 
-  function updateDraftField(field, value) {
+  function updateDraftField(field, value, options = {}) {
+    if (options.notifySettings) {
+      pendingSettingsToastRef.current = true
+    }
     setDraft((current) => ({ ...current, [field]: value }))
   }
 
   function handleAutoMemory() {
-    setDraft((current) => ({ ...current, memoryMb: memoryProfile.recommendedMemoryMb }))
+    pendingSettingsToastRef.current = true
+    setDraft((current) => {
+      return {
+        ...current,
+        autoMemoryEnabled: !current.autoMemoryEnabled
+      }
+    })
   }
 
   const buttonTitle = busy
-    ? getProgressTitle(installProgress)
-    : versionState.installed
+    ? actionMode === 'launch'
+      ? 'Запускаю...'
+      : getProgressTitle(installProgress)
+    : versionState.running
+      ? TEXT.actionRunning
+      : versionState.installed
       ? TEXT.actionLaunch
       : versionState.hasSource
         ? TEXT.actionInstall
         : TEXT.actionUnavailable
 
+  const buttonDisabled = busy || (!versionState.installed && !versionState.hasSource)
+  const progressStatusText = formatProgressStatus(installProgress)
+  const memoryInputDisabled = Boolean(draft.autoMemoryEnabled)
+
   const buttonMeta = busy
-    ? ''
+    ? actionMode === 'launch'
+      ? statusText || 'Подготавливаю запуск Minecraft'
+      : progressStatusText || statusText || 'Подготавливаю клиент'
+    : versionState.running
+      ? `Minecraft уже запущен${versionState.runningPid ? ` · PID ${versionState.runningPid}` : ''}. Нажмите, чтобы закрыть лаунчер.`
     : versionState.installed
       ? 'Откроет профиль Royale Master'
       : versionState.hasSource
         ? 'Установит клиент Royale Master'
         : 'Версия появится позже'
 
-  const buttonDisabled = busy || (!versionState.installed && !versionState.hasSource)
+  const displayButtonMeta = busy && actionMode === 'install' && installPaused
+    ? 'Загрузка на паузе'
+    : buttonMeta
+  const showInstallPauseControl = busy && actionMode === 'install'
+  const showBusyCancelControl = busy
 
-  const featureLead = versionState.installed
-    ? `Отдельный клиент ${selectedProfile?.title || 'Royale Master'} для Minecraft ${selectedProfile?.versionName || selectedVersion}.`
-    : versionState.hasSource
-      ? `Подготовит отдельный профиль ${selectedProfile?.title || 'Royale Master'} в Minecraft Launcher.`
-      : TEXT.versionSoon
+  const featureLead = versionState.running
+    ? `Клиент ${selectedProfile?.title || 'Royale Master'} уже запущен. Лаунчер можно закрыть, Minecraft продолжит работать.`
+    : heroFact
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${shellLiteMode ? 'app-shell--lite' : ''}`}>
       <header className="titlebar" data-drag-region>
         <div className="titlebar__brand">
           <span className="titlebar__mark">R</span>
           <span>{TEXT.appName}</span>
         </div>
         <div className="titlebar__actions" data-no-drag-region>
+          <span className="titlebar__version">v{appVersion}</span>
           <button className="window-button" onClick={() => api.windowAction('minimize')} aria-label="Minimize">
             <MinimizeIcon />
           </button>
-          <button className="window-button" onClick={() => api.windowAction('close')} aria-label="Close">
+          <button className="window-button" onClick={handleCloseLauncherRequest} aria-label="Close">
             <CloseIcon />
           </button>
         </div>
@@ -510,10 +1035,10 @@ function App() {
           </div>
 
           <div className="rail__stack">
-            <NavButton active={page === 'home'} label={TEXT.home} onClick={() => setPage('home')}>
+            <NavButton active={page === 'home'} label={TEXT.home} onClick={() => openPage('home')}>
               <HomeIcon />
             </NavButton>
-            <NavButton active={page === 'settings'} label={TEXT.settings} onClick={() => setPage('settings')}>
+            <NavButton active={page === 'settings'} label={TEXT.settings} onClick={() => openPage('settings')}>
               <SettingsIcon />
             </NavButton>
           </div>
@@ -536,6 +1061,7 @@ function App() {
                   <span className="eyebrow">{TEXT.heroEyebrow}</span>
                   <h1>Royale Master</h1>
                   <p className="hero__lead">{TEXT.heroLead}</p>
+                  <p className="hero__fact">{heroFact}</p>
                 </div>
 
                 <section className="version-dock">
@@ -561,6 +1087,7 @@ function App() {
                           version={entry.versionName}
                           subtitle={entry.channel || entry.title || 'Royale'}
                           state={getVersionStateChip(entry, selectedVersion, versionState)}
+                          disabled={busy}
                           onClick={() => selectVersion(entry.versionName)}
                         />
                       ))}
@@ -570,26 +1097,24 @@ function App() {
               </div>
 
               <aside className="feature-stage">
-                <div className="feature-stage__art">
-                  <img
-                    className="feature-stage__art-image"
-                    src={selectedArt.image}
-                    alt=""
-                    style={{ objectPosition: selectedArt.position || 'center center' }}
-                  />
-                </div>
+                <div className={`feature-stage__art feature-stage__art--${selectedArt.tone}`} />
 
                 <div className="feature-stage__overlay">
                   <span className="feature-stage__badge">{TEXT.featureBadge}</span>
 
                   <div className="feature-stage__panel">
                     <div className={`feature-stage__visual feature-stage__visual--${selectedArt.tone}`}>
-                      <img
-                        className="feature-stage__visual-image"
-                        src={selectedArt.image}
-                        alt=""
-                        style={{ objectPosition: selectedArt.position || 'center center' }}
-                      />
+                      {showVersionArt ? (
+                        <img
+                          className="feature-stage__visual-image"
+                          src={selectedArt.image}
+                          alt=""
+                          decoding="async"
+                          loading="lazy"
+                          fetchPriority="low"
+                          style={{ objectPosition: selectedArt.position || 'center center' }}
+                        />
+                      ) : null}
                     </div>
 
                     <div className="feature-stage__header">
@@ -606,24 +1131,53 @@ function App() {
                       </div>
                     </div>
 
-                    <button
-                      className={`primary-action ${busy ? 'is-busy' : ''} ${buttonDisabled ? 'is-locked' : ''}`}
-                      onClick={handlePrimaryAction}
-                      disabled={buttonDisabled}
-                      style={{ '--progress': `${getProgressPercent(installProgress)}%` }}
-                    >
-                      <span className="primary-action__fill" />
-                      <span className="primary-action__body">
-                        <span className="primary-action__title">{buttonTitle}</span>
-                        {buttonMeta ? <span className="primary-action__meta">{buttonMeta}</span> : null}
-                      </span>
-                    </button>
+                    <div className={`feature-stage__action-shell ${busy ? 'is-busy' : ''}`}>
+                      <button
+                        className={`primary-action ${busy ? 'is-busy' : ''} ${buttonDisabled ? 'is-locked' : ''} ${(showInstallPauseControl || showBusyCancelControl) ? 'has-inline-actions' : ''}`}
+                        onClick={handlePrimaryAction}
+                        disabled={buttonDisabled}
+                        style={{ '--progress': `${getProgressPercent(installProgress)}%` }}
+                      >
+                        <span className="primary-action__fill" />
+                        <span className="primary-action__body">
+                          <span className="primary-action__title">{buttonTitle}</span>
+                          {displayButtonMeta ? <span className="primary-action__meta">{displayButtonMeta}</span> : null}
+                        </span>
+                      </button>
 
-                    {statusText ? <p className="feature-stage__status-line">{statusText}</p> : null}
+                      {showInstallPauseControl || showBusyCancelControl ? (
+                        <div className="feature-stage__busy-actions">
+                          {showInstallPauseControl ? (
+                            <button
+                              className={`icon-action ${installPaused ? 'is-active' : ''}`}
+                              type="button"
+                              onClick={handlePauseInstall}
+                              aria-label={installPaused ? 'Resume install' : 'Pause install'}
+                              title={installPaused ? 'Продолжить' : 'Пауза'}
+                            >
+                              <PauseIcon />
+                            </button>
+                          ) : null}
+                          {showBusyCancelControl ? (
+                            <button
+                              className="icon-action"
+                              type="button"
+                              onClick={requestCancelBusyOperation}
+                              aria-label="Cancel operation"
+                              title="Отменить"
+                            >
+                              <StopIcon />
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               </aside>
             </section>
+          ) : page === 'stats' ? (
+            <StatsStubPage hasUpdateBanner={updateInfo.available} />
           ) : (
             <section className={`settings page-surface ${updateInfo.available ? 'has-update-banner' : ''}`}>
               <div className="settings__header">
@@ -663,10 +1217,11 @@ function App() {
                         type="text"
                         inputMode="numeric"
                         pattern="[0-9]*"
-                        value={draft.memoryMb}
+                        value={draft.autoMemoryEnabled ? memoryProfile.recommendedMemoryMb : draft.memoryMb}
+                        disabled={memoryInputDisabled}
                         onChange={(event) => updateDraftField('memoryMb', event.target.value)}
                       />
-                      <button className="field__action" type="button" onClick={handleAutoMemory}>
+                      <button className={`field__action ${draft.autoMemoryEnabled ? 'is-active' : ''}`} type="button" onClick={handleAutoMemory}>
                         {TEXT.memoryAuto}
                       </button>
                     </div>
@@ -684,6 +1239,41 @@ function App() {
                     />
                   </label>
                   <p className="settings-note">{TEXT.javaArgsHint}</p>
+
+                  <div className="settings-behavior">
+                    <span className="field__label">{TEXT.settingsBehavior}</span>
+
+                    <label className="toggle-field">
+                      <span className="toggle-field__copy">
+                        <strong>{TEXT.hideLauncherOnLaunch}</strong>
+                        <span>{TEXT.hideLauncherOnLaunchHint}</span>
+                      </span>
+                      <span className="toggle-field__control">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(draft.hideLauncherOnGameLaunch)}
+                          onChange={(event) => updateDraftField('hideLauncherOnGameLaunch', event.target.checked, { notifySettings: true })}
+                        />
+                        <span className="toggle-switch" aria-hidden="true" />
+                      </span>
+                    </label>
+
+                    <label className={`toggle-field ${!draft.hideLauncherOnGameLaunch ? 'is-disabled' : ''}`}>
+                      <span className="toggle-field__copy">
+                        <strong>{TEXT.reopenLauncherOnExit}</strong>
+                        <span>{TEXT.reopenLauncherOnExitHint}</span>
+                      </span>
+                      <span className="toggle-field__control">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(draft.reopenLauncherOnGameExit)}
+                          disabled={!draft.hideLauncherOnGameLaunch}
+                          onChange={(event) => updateDraftField('reopenLauncherOnGameExit', event.target.checked, { notifySettings: true })}
+                        />
+                        <span className="toggle-switch" aria-hidden="true" />
+                      </span>
+                    </label>
+                  </div>
                 </div>
 
                 <div className="settings-card settings-card--versions">
@@ -709,6 +1299,45 @@ function App() {
           )}
         </main>
       </div>
+
+      {showCloseLauncherPrompt ? (
+        <ConfirmModal
+          title={TEXT.closeLauncherTitle}
+          description={TEXT.closeLauncherLead}
+          confirmLabel={TEXT.closeLauncherConfirm}
+          cancelLabel={TEXT.closeLauncherCancel}
+          onConfirm={handleConfirmCloseLauncher}
+          onCancel={() => setShowCloseLauncherPrompt(false)}
+        />
+      ) : null}
+
+      {showCancelPrompt ? (
+        <ConfirmModal
+          title={actionMode === 'launch' ? 'Отменить запуск?' : 'Отменить загрузку?'}
+          description={actionMode === 'launch'
+            ? 'Подготовка клиента прервётся. Если отменить слишком поздно, Minecraft уже может успеть открыться.'
+            : 'Текущая загрузка или установка будет остановлена. Недокачанные файлы можно будет запустить заново позже.'}
+          confirmLabel="Да"
+          cancelLabel="Нет"
+          checkboxLabel="Больше не показывать"
+          checkboxChecked={cancelRememberChoice}
+          onCheckboxChange={setCancelRememberChoice}
+          onConfirm={() => confirmCancelBusyOperation(cancelRememberChoice)}
+          onCancel={() => {
+            setCancelRememberChoice(false)
+            setShowCancelPrompt(false)
+          }}
+        />
+      ) : null}
+
+      {activeToast ? (
+        <div className={`toast toast--${activeToast.tone}`} role="status" aria-live="polite">
+          <div className="toast__body">
+            <strong>{activeToast.message}</strong>
+          </div>
+          <span className="toast__timer" />
+        </div>
+      ) : null}
     </div>
   )
 }

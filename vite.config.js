@@ -10,6 +10,20 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist-renderer',
-    emptyOutDir: true
+    emptyOutDir: true,
+    target: 'es2022',
+    reportCompressedSize: false,
+    minify: 'esbuild',
+    modulePreload: {
+      polyfill: false
+    },
+    assetsInlineLimit: 2048,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom']
+        }
+      }
+    }
   }
 })

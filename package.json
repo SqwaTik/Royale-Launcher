@@ -1,20 +1,26 @@
 {
-  "name": "royale-launcher-electron",
+  "name": "royale-launcher",
   "version": "0.1.0",
   "private": true,
   "author": "sqwat",
-  "description": "Royale desktop launcher built with Electron and React",
+  "description": "Minecraft launcher for Royale Master",
   "productName": "Royale Launcher",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && set ELECTRON_RUN_AS_NODE=&& set VITE_DEV_SERVER_URL=http://127.0.0.1:5173&& electron .\"",
-    "build": "vite build",
+    "build": "npm run build:renderer",
+    "build:renderer": "vite build",
     "client:pack": "node scripts/build-client-package.mjs",
     "client:pack:1.21.11": "node scripts/build-client-package.mjs 1.21.11",
     "start": "npm run build && set ELECTRON_RUN_AS_NODE=&& electron .",
     "dist:win": "npm run dist:win:setup",
-    "dist:win:setup": "npm run build && electron-builder --win nsis",
-    "dist:win:portable": "npm run build && electron-builder --win portable"
+    "dist:win:setup": "node scripts/build-win.mjs offline",
+    "dist:win:setup:x64": "node scripts/build-win.mjs offline x64",
+    "dist:win:setup:ia32": "node scripts/build-win.mjs offline ia32",
+    "dist:win:offline": "node scripts/build-win.mjs offline",
+    "dist:win:portable": "node scripts/build-win.mjs portable",
+    "dist:linux": "electron-builder --linux AppImage deb rpm --publish never",
+    "dist:mac": "electron-builder --mac dmg --publish never"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -32,6 +38,7 @@
   "build": {
     "appId": "com.royale.launcher",
     "productName": "Royale Launcher",
+    "executableName": "Royale Launcher",
     "asar": true,
     "compression": "maximum",
     "electronLanguages": [
@@ -42,21 +49,79 @@
       "output": "dist-app",
       "buildResources": "build"
     },
+    "extraResources": [
+      {
+        "from": "build/icon.ico",
+        "to": "icon.ico"
+      }
+    ],
     "files": [
       "dist-renderer/**/*",
       "electron/**/*",
       "package.json"
     ],
     "win": {
-      "icon": "icon.ico",
+      "icon": "build/icon.ico",
       "signAndEditExecutable": false,
-      "artifactName": "RoyaleLauncher-${version}.exe",
-      "target": "nsis"
+      "artifactName": "RoyaleLauncher-${version}.${ext}"
+    },
+    "linux": {
+      "category": "Game",
+      "icon": "build/icon.png",
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm"
+      ],
+      "artifactName": "RoyaleLauncher-${version}-${arch}.${ext}"
+    },
+    "mac": {
+      "category": "public.app-category.games",
+      "icon": "build/icon.icns",
+      "target": [
+        "dmg"
+      ],
+      "artifactName": "RoyaleLauncher-${version}-${arch}.${ext}"
     },
     "nsis": {
-      "oneClick": true,
+      "oneClick": false,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": false
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Royale Launcher",
+      "installerIcon": "icon.ico",
+      "uninstallerIcon": "icon.ico",
+      "installerHeader": "installerHeader.bmp",
+      "installerSidebar": "installerSidebar.bmp",
+      "uninstallerSidebar": "uninstallerSidebar.bmp",
+      "include": "installer.nsh",
+      "installerHeaderIcon": "icon.ico",
+      "language": "1049",
+      "displayLanguageSelector": false,
+      "warningsAsErrors": false,
+      "artifactName": "RoyaleLauncherInstaller.${ext}",
+      "runAfterFinish": false
+    },
+    "nsisWeb": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Royale Launcher",
+      "installerIcon": "icon.ico",
+      "uninstallerIcon": "icon.ico",
+      "installerHeader": "installerHeader.bmp",
+      "installerSidebar": "installerSidebar.bmp",
+      "uninstallerSidebar": "uninstallerSidebar.bmp",
+      "include": "installer.nsh",
+      "installerHeaderIcon": "icon.ico",
+      "language": "1049",
+      "displayLanguageSelector": false,
+      "warningsAsErrors": false,
+      "artifactName": "RoyaleLauncherInstaller.${ext}",
+      "runAfterFinish": false
     }
   }
 }
