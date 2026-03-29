@@ -178,7 +178,7 @@ const DEFAULT_VERSION_CATALOG = [
     versionName: '1.21.11',
     channel: 'Основная сборка',
     title: 'Royale Master',
-    source: 'https://github.com/SqwaTik/Royale-Launcher/releases/latest/download/1.21.11.zip',
+    source: 'https://github.com/SqwaTik/Royale-Launcher-Versions/releases/latest/download/1.21.11.zip',
     notes: 'Готовая сборка Royale Master для модифицированного Minecraft-клиента.'
   },
   {

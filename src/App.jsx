@@ -18,7 +18,7 @@ const DEFAULT_SETTINGS = {
   reopenLauncherOnGameExit: true,
   skipCancelConfirm: false,
   versions: [
-    { versionName: '1.21.11', channel: 'Основная сборка', title: 'Royale Master', source: 'client-assets/1.21.11.zip', notes: 'Готовая сборка Royale Master для модифицированного Minecraft-клиента.' },
+    { versionName: '1.21.11', channel: 'Основная сборка', title: 'Royale Master', source: 'https://github.com/SqwaTik/Royale-Launcher-Versions/releases/latest/download/1.21.11.zip', notes: 'Готовая сборка Royale Master для модифицированного Minecraft-клиента.' },
     { versionName: '26.1', channel: 'Скоро', title: 'Версия готовится', source: '', notes: 'Эта версия появится позже.' },
     { versionName: '1.21.4', channel: 'Скоро', title: 'Версия готовится', source: '', notes: 'Эта версия появится позже.' },
     { versionName: '1.16.5', channel: 'Скоро', title: 'Версия готовится', source: '', notes: 'Эта версия появится позже.' },

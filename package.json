@@ -14,9 +14,10 @@
     "client:pack:1.21.11": "node scripts/build-client-package.mjs 1.21.11",
     "start": "npm run build && set ELECTRON_RUN_AS_NODE=&& electron .",
     "dist:win": "npm run dist:win:setup",
-    "dist:win:setup": "node scripts/build-win.mjs offline",
-    "dist:win:setup:x64": "node scripts/build-win.mjs offline x64",
-    "dist:win:setup:ia32": "node scripts/build-win.mjs offline ia32",
+    "dist:win:setup": "node scripts/build-win.mjs online",
+    "dist:win:setup:x64": "node scripts/build-win.mjs online x64",
+    "dist:win:setup:ia32": "node scripts/build-win.mjs online ia32",
+    "dist:win:online": "node scripts/build-win.mjs online",
     "dist:win:offline": "node scripts/build-win.mjs offline",
     "dist:win:portable": "node scripts/build-win.mjs portable",
     "dist:linux": "electron-builder --linux AppImage deb rpm --publish never",
@@ -60,6 +61,13 @@
       "electron/**/*",
       "package.json"
     ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "SqwaTik",
+        "repo": "Royale-Launcher"
+      }
+    ],
     "win": {
       "icon": "build/icon.ico",
       "signAndEditExecutable": false,
@@ -84,6 +92,26 @@
       "artifactName": "RoyaleLauncher-${version}-${arch}.${ext}"
     },
     "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Royale Launcher",
+      "installerIcon": "icon.ico",
+      "uninstallerIcon": "icon.ico",
+      "installerHeader": "installerHeader.bmp",
+      "installerSidebar": "installerSidebar.bmp",
+      "uninstallerSidebar": "uninstallerSidebar.bmp",
+      "include": "installer.nsh",
+      "installerHeaderIcon": "icon.ico",
+      "language": "1049",
+      "displayLanguageSelector": false,
+      "warningsAsErrors": false,
+      "artifactName": "RoyaleLauncherInstaller.${ext}",
+      "runAfterFinish": true
+    },
+    "nsisWeb": {
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
