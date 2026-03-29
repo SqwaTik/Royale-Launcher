@@ -1,6 +1,6 @@
 {
   "name": "royale-launcher",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "author": "sqwat",
   "description": "Minecraft launcher for Royale Master",
@@ -101,27 +101,7 @@
       "displayLanguageSelector": false,
       "warningsAsErrors": false,
       "artifactName": "RoyaleLauncherInstaller.${ext}",
-      "runAfterFinish": false
-    },
-    "nsisWeb": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "Royale Launcher",
-      "installerIcon": "icon.ico",
-      "uninstallerIcon": "icon.ico",
-      "installerHeader": "installerHeader.bmp",
-      "installerSidebar": "installerSidebar.bmp",
-      "uninstallerSidebar": "uninstallerSidebar.bmp",
-      "include": "installer.nsh",
-      "installerHeaderIcon": "icon.ico",
-      "language": "1049",
-      "displayLanguageSelector": false,
-      "warningsAsErrors": false,
-      "artifactName": "RoyaleLauncherInstaller.${ext}",
-      "runAfterFinish": false
+      "runAfterFinish": true
     }
   }
 }

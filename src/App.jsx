@@ -70,7 +70,7 @@ const DEFAULT_STORAGE_INFO = {
   totalBytes: 0
 }
 
-const DEFAULT_APP_VERSION = '0.1.0'
+const DEFAULT_APP_VERSION = '0.1.1'
 
 const HERO_FACTS = [
   'Факт Royale: хороший лаунчер должен исчезать в тень, а не мешать запуску мира.',
@@ -548,6 +548,14 @@ function App() {
     }, nextToast.duration || 5000)
   }
 
+  function dismissActiveToast() {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current)
+      toastTimerRef.current = null
+    }
+    setActiveToast(null)
+  }
+
   function enqueueToast(message, tone = 'neutral', key = message) {
     const normalizedMessage = String(message || '').trim()
     if (!normalizedMessage) return
@@ -679,6 +687,12 @@ function App() {
       }
     }
   }, [api, draft.installFolder, draft.javaArgs, draft.memoryMb, draft.autoMemoryEnabled, draft.hideLauncherOnGameLaunch, draft.reopenLauncherOnGameExit, draft.skipCancelConfirm])
+
+  useEffect(() => {
+    if (!activeToast && !document.hidden) {
+      processToastQueue()
+    }
+  }, [activeToast])
 
   useEffect(() => {
     function flushHiddenToasts() {
@@ -1334,6 +1348,9 @@ function App() {
         <div className={`toast toast--${activeToast.tone}`} role="status" aria-live="polite">
           <div className="toast__body">
             <strong>{activeToast.message}</strong>
+            <button className="toast__close" type="button" onClick={dismissActiveToast} aria-label="Закрыть уведомление">
+              <CloseIcon />
+            </button>
           </div>
           <span className="toast__timer" />
         </div>

@@ -13,6 +13,11 @@ const packageJson = JSON.parse(readFileSync(path.join(projectRoot, 'package.json
 const version = packageJson.version
 const mode = String(process.argv[2] || 'offline').toLowerCase()
 const arch = String(process.argv[3] || 'x64').toLowerCase()
+const SUPPORTED_MODES = new Set(['offline', 'portable'])
+
+if (!SUPPORTED_MODES.has(mode)) {
+  throw new Error(`Unsupported Windows build mode: ${mode}`)
+}
 
 function getUnpackedDir() {
   return path.join(distRoot, arch === 'x64' ? 'win-unpacked' : `win-${arch}-unpacked`)
@@ -41,7 +46,6 @@ function getToolPath(...segments) {
 
 function getBuilderTarget(currentMode) {
   if (currentMode === 'portable') return 'portable'
-  if (currentMode === 'web') return 'nsis-web'
   return 'nsis'
 }
 
