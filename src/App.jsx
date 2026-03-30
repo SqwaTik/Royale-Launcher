@@ -71,7 +71,7 @@ const DEFAULT_STORAGE_INFO = {
   totalBytes: 0
 }
 
-const DEFAULT_APP_VERSION = '0.1.3'
+const DEFAULT_APP_VERSION = '0.1.4'
 
 const HERO_FACTS = [
   'Факт Royale: хороший лаунчер должен исчезать в тень, а не мешать запуску мира.',
@@ -1135,8 +1135,7 @@ function App() {
 
         <main className="content">
           {updateInfo.available ? (
-            <div className="update-banner">
-              <span>{TEXT.updateLabel}</span>
+            <div className="update-banner" role="status" aria-live="polite">
               <button className="update-banner__button" onClick={handleOpenUpdate}>
                 {`${TEXT.updateAction} v${updateInfo.version}`}
               </button>
