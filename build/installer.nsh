@@ -6,6 +6,17 @@ Var CreateStartMenuShortcut
 Var ShortcutDesktopCheckbox
 Var ShortcutStartMenuCheckbox
 
+!macro customInstallMode
+  StrCpy $isForceCurrentInstall 1
+!macroend
+
+!macro preInit
+  SetShellVarContext current
+  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\8f4d6e17-715d-5b94-8c1e-ebea8e8e8b6d"
+  RMDir /r "$LOCALAPPDATA\Programs\royale-launcher-electron"
+  StrCpy $INSTDIR "$LOCALAPPDATA\Programs\royale-launcher\Royale Launcher"
+!macroend
+
 !macro customPageAfterChangeDir
   Page custom shortcutOptionsPageCreate shortcutOptionsPageLeave
 !macroend

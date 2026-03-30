@@ -179,7 +179,7 @@ const DEFAULT_VERSION_CATALOG = [
     channel: 'Основная сборка',
     title: 'Royale Master',
     source: 'https://github.com/SqwaTik/Royale-Launcher-Versions/releases/latest/download/1.21.11.zip',
-    notes: 'Готовая сборка Royale Master для модифицированного Minecraft-клиента.'
+    notes: 'Клиент Royale Master для Minecraft 1.21.11 с отдельной установкой и прямым запуском.'
   },
   {
     versionName: '26.1',
@@ -2643,15 +2643,6 @@ async function checkLauncherUpdate() {
   }
 }
 
-async function checkLauncherUpdateFast(timeoutMs = 1200) {
-  try {
-    await Promise.race([
-      checkLauncherUpdate(),
-      new Promise((resolve) => setTimeout(resolve, timeoutMs))
-    ])
-  } catch {}
-}
-
 function emit(channel, payload) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(channel, payload)
@@ -3058,7 +3049,6 @@ function buildJavaArgs(settings, versionName, installDir, launchableFile) {
 
 async function launchVersion(versionName) {
   resetLaunchController()
-  checkLauncherUpdateFast().catch(() => {})
   try {
   setLaunchStatus('Проверяю наличие обновлений...')
   setLaunchStatus('Проверяю запуск клиента...')
@@ -3120,7 +3110,6 @@ async function launchVersion(versionName) {
 
 async function launchVersionFlow(versionName) {
   resetLaunchController()
-  checkLauncherUpdateFast().catch(() => {})
 
   try {
     setLaunchStatus('РџСЂРѕРІРµСЂСЏСЋ Р·Р°РїСѓСЃРє РєР»РёРµРЅС‚Р°...')
@@ -3184,7 +3173,6 @@ async function launchVersionFlow(versionName) {
 
 async function launchVersionTask(versionName) {
   resetLaunchController()
-  checkLauncherUpdateFast().catch(() => {})
 
   const checkingClientStatus = '\u041f\u0440\u043e\u0432\u0435\u0440\u044f\u044e \u0437\u0430\u043f\u0443\u0441\u043a \u043a\u043b\u0438\u0435\u043d\u0442\u0430...'
   const checkingLaunchFileStatus = '\u041f\u0440\u043e\u0432\u0435\u0440\u044f\u044e launch-\u0444\u0430\u0439\u043b\u044b...'

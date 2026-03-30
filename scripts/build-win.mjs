@@ -232,7 +232,7 @@ function syncBuildOutputs(currentMode) {
   }
 
   const installedDir = path.join('C:\\Users\\sqwat\\AppData\\Local\\Programs\\royale-launcher', 'Royale Launcher')
-  if (arch === 'x64' && existsSync(path.dirname(installedDir))) {
+  if (arch === 'x64') {
     mkdirSync(installedDir, { recursive: true })
     cpSync(unpackedDir, installedDir, { recursive: true, force: true })
     cleanupLegacyInstall()

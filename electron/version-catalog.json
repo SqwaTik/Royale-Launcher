@@ -4,7 +4,7 @@
     "channel": "Основная сборка",
     "title": "Royale Master",
     "source": "https://github.com/SqwaTik/Royale-Launcher-Versions/releases/latest/download/1.21.11.zip",
-    "notes": "Готовая сборка Royale Master для модифицированного Minecraft-клиента."
+    "notes": "Клиент Royale Master для Minecraft 1.21.11 с отдельной установкой и прямым запуском."
   },
   {
     "versionName": "26.1",

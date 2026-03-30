@@ -61,30 +61,12 @@ function Draw-InstallerSidebar([string]$targetPath) {
   $graphics.FillRectangle($background, $rect)
   $background.Dispose()
 
-  $accentBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(24, 255, 181, 104))
-  $graphics.FillEllipse($accentBrush, -36, -26, 180, 132)
-  $graphics.FillEllipse($accentBrush, 52, 228, 140, 104)
+  $accentBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(16, 255, 181, 104))
+  $graphics.FillEllipse($accentBrush, -28, -22, 156, 116)
+  $graphics.FillEllipse($accentBrush, 70, 230, 110, 90)
   $accentBrush.Dispose()
 
-  Draw-BrandTile $graphics 26 26 64
-
-  $titleBrush = New-TextBrush
-  $titleFont = New-Object System.Drawing.Font('Segoe UI Semibold', 21, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Pixel)
-  $subtitleBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(190, 255, 214, 141))
-  $subtitleFont = New-Object System.Drawing.Font('Segoe UI Semibold', 10, [System.Drawing.FontStyle]::Regular, [System.Drawing.GraphicsUnit]::Pixel)
-  $copyBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(170, 246, 240, 231))
-  $copyFont = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Regular, [System.Drawing.GraphicsUnit]::Pixel)
-
-  $graphics.DrawString('Royale', $titleFont, $titleBrush, 26, 106)
-  $graphics.DrawString('LAUNCHER', $subtitleFont, $subtitleBrush, 28, 136)
-  $graphics.DrawString('Minecraft launcher' + [Environment]::NewLine + 'for Royale Master', $copyFont, $copyBrush, 28, 246)
-
-  $titleFont.Dispose()
-  $subtitleFont.Dispose()
-  $copyFont.Dispose()
-  $titleBrush.Dispose()
-  $subtitleBrush.Dispose()
-  $copyBrush.Dispose()
+  Draw-BrandTile $graphics 48 34 68
   $graphics.Dispose()
 
   Save-Bitmap $bitmap $targetPath
@@ -99,27 +81,17 @@ function Draw-InstallerHeader([string]$targetPath) {
   $rect = New-Object System.Drawing.Rectangle 0, 0, 150, 57
   $background = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
     $rect,
-    (New-Color '#10161f'),
-    (New-Color '#2e170d'),
+    (New-Color '#f7f2eb'),
+    (New-Color '#ece4d8'),
     0
   )
   $graphics.FillRectangle($background, $rect)
   $background.Dispose()
 
-  Draw-BrandTile $graphics 12 8 40
-
-  $titleBrush = New-TextBrush
-  $titleFont = New-Object System.Drawing.Font('Segoe UI Semibold', 12, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Pixel)
-  $subtitleBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(176, 255, 214, 141))
-  $subtitleFont = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular, [System.Drawing.GraphicsUnit]::Pixel)
-
-  $graphics.DrawString('Royale Launcher', $titleFont, $titleBrush, 60, 11)
-  $graphics.DrawString('Windows setup', $subtitleFont, $subtitleBrush, 60, 29)
-
-  $titleFont.Dispose()
-  $subtitleFont.Dispose()
-  $titleBrush.Dispose()
-  $subtitleBrush.Dispose()
+  $accentBrush = New-Object System.Drawing.SolidBrush (New-Color '#ffb56e')
+  $graphics.FillRectangle($accentBrush, 0, 52, 150, 5)
+  $accentBrush.Dispose()
+  Draw-BrandTile $graphics 96 8 34
   $graphics.Dispose()
 
   Save-Bitmap $bitmap $targetPath

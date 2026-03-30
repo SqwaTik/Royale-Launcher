@@ -1,4 +1,5 @@
 import { memo, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { MINECRAFT_FACTS } from './minecraftFacts'
 
 const VERSION_ART_IMAGES = {
   '1.21.11': new URL('./assets/version-art/1.21.11.jpg', import.meta.url).href,
@@ -18,7 +19,7 @@ const DEFAULT_SETTINGS = {
   reopenLauncherOnGameExit: true,
   skipCancelConfirm: false,
   versions: [
-    { versionName: '1.21.11', channel: 'Основная сборка', title: 'Royale Master', source: 'https://github.com/SqwaTik/Royale-Launcher-Versions/releases/latest/download/1.21.11.zip', notes: 'Готовая сборка Royale Master для модифицированного Minecraft-клиента.' },
+    { versionName: '1.21.11', channel: 'Основная сборка', title: 'Royale Master', source: 'https://github.com/SqwaTik/Royale-Launcher-Versions/releases/latest/download/1.21.11.zip', notes: 'Клиент Royale Master для Minecraft 1.21.11 с отдельной установкой и прямым запуском.' },
     { versionName: '26.1', channel: 'Скоро', title: 'Версия готовится', source: '', notes: 'Эта версия появится позже.' },
     { versionName: '1.21.4', channel: 'Скоро', title: 'Версия готовится', source: '', notes: 'Эта версия появится позже.' },
     { versionName: '1.16.5', channel: 'Скоро', title: 'Версия готовится', source: '', notes: 'Эта версия появится позже.' },
@@ -70,7 +71,7 @@ const DEFAULT_STORAGE_INFO = {
   totalBytes: 0
 }
 
-const DEFAULT_APP_VERSION = '0.1.1'
+const DEFAULT_APP_VERSION = '0.1.2'
 
 const HERO_FACTS = [
   'Факт Royale: хороший лаунчер должен исчезать в тень, а не мешать запуску мира.',
@@ -114,7 +115,7 @@ const TEXT = {
   home: 'Главная',
   settings: 'Настройки',
   heroEyebrow: 'Minecraft launcher',
-  heroLead: 'Лаунчер для Royale Master: ставит клиент аккуратно, запускает напрямую и не отвлекает лишним шумом.',
+  heroLead: 'Royale Launcher устанавливает, обновляет и запускает клиент Royale Master в одном окне.',
   chooseVersionTitle: 'Выберите версию',
   chooseVersionLead: 'Выберите нужную сборку клиента. Остальные версии открываются прокруткой внутри блока.',
   featureBadge: 'Royale Launcher',
@@ -142,7 +143,7 @@ const TEXT = {
   versionInstall: 'Клиент еще не установлен. Нажмите «Скачать», чтобы подготовить Minecraft с клиентом Royale Master.',
   versionSoon: 'Эта версия пока не подключена.',
   updateLabel: 'Доступно обновление лаунчера',
-  updateAction: 'Обновить',
+  updateAction: 'Обновить до',
   settingsLead: 'Изменения сохраняются автоматически, а AUTO подбирает память по вашему ПК.',
   settingsVersions: 'Доступные версии',
   settingsBehavior: 'Поведение лаунчера',
@@ -482,9 +483,11 @@ function App() {
   const api = window.royaleApi
   const autosaveReadyRef = useRef(false)
   const autosaveTimerRef = useRef(null)
+  const toastDismissTimerRef = useRef(null)
   const updateCheckScheduledRef = useRef(false)
   const memoryLoadedRef = useRef(false)
   const pendingSettingsToastRef = useRef(false)
+  const settingsRef = useRef(DEFAULT_SETTINGS)
   const toastQueueRef = useRef([])
   const toastTimerRef = useRef(null)
   const hiddenToastQueueRef = useRef([])
@@ -522,7 +525,11 @@ function App() {
   const selectedArt = VERSION_ART[deferredSelectedVersion] || VERSION_ART['1.21.11']
   const shouldPollVersionState = page === 'home' || versionState.running || showCloseLauncherPrompt
   const shellLiteMode = lowPerformanceMode || page === 'settings' || !showVersionArt
-  const heroFact = HERO_FACTS[heroFactIndex % HERO_FACTS.length]
+  const heroFact = MINECRAFT_FACTS[heroFactIndex % MINECRAFT_FACTS.length]
+
+  useEffect(() => {
+    settingsRef.current = settings
+  }, [settings])
 
   function applyVersionState(nextState) {
     startTransition(() => {
@@ -540,20 +547,48 @@ function App() {
       return
     }
 
-    setActiveToast(nextToast)
+    setActiveToast({ ...nextToast, closing: false })
     toastTimerRef.current = window.setTimeout(() => {
-      setActiveToast(null)
-      toastTimerRef.current = null
-      processToastQueue()
+      beginToastClose()
     }, nextToast.duration || 5000)
   }
 
-  function dismissActiveToast() {
+  function clearToastTimers() {
     if (toastTimerRef.current) {
       clearTimeout(toastTimerRef.current)
       toastTimerRef.current = null
     }
-    setActiveToast(null)
+    if (toastDismissTimerRef.current) {
+      clearTimeout(toastDismissTimerRef.current)
+      toastDismissTimerRef.current = null
+    }
+  }
+
+  function beginToastClose() {
+    if (!activeToast) {
+      clearToastTimers()
+      return
+    }
+
+    if (toastDismissTimerRef.current) {
+      return
+    }
+
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current)
+      toastTimerRef.current = null
+    }
+
+    setActiveToast((current) => (current ? { ...current, closing: true } : null))
+    toastDismissTimerRef.current = window.setTimeout(() => {
+      setActiveToast(null)
+      toastDismissTimerRef.current = null
+      processToastQueue()
+    }, 180)
+  }
+
+  function dismissActiveToast() {
+    beginToastClose()
   }
 
   function enqueueToast(message, tone = 'neutral', key = message) {
@@ -580,6 +615,51 @@ function App() {
 
     toastQueueRef.current.push(nextToast)
     processToastQueue()
+  }
+
+  async function persistSettingsSnapshot(nextSettings, options = {}) {
+    const previousInstallFolder = settingsRef.current.installFolder
+    const saved = await api.saveSettings(nextSettings)
+    settingsRef.current = saved
+    setSettings(saved)
+    setDraft((current) => ({
+      ...current,
+      installFolder: saved.installFolder,
+      javaArgs: saved.javaArgs || '',
+      memoryMb: saved.memoryMb,
+      autoMemoryEnabled: saved.autoMemoryEnabled,
+      hideLauncherOnGameLaunch: saved.hideLauncherOnGameLaunch,
+      reopenLauncherOnGameExit: saved.reopenLauncherOnGameExit,
+      skipCancelConfirm: saved.skipCancelConfirm,
+      versions: saved.versions,
+      lastSelectedVersion: saved.lastSelectedVersion
+    }))
+
+    if (saved.installFolder !== previousInstallFolder) {
+      await refreshVersionState(saved.lastSelectedVersion)
+    }
+
+    if (options.notify) {
+      enqueueToast('Настройки применены', 'success', `settings-applied-${saved.installFolder}-${saved.memoryMb}-${saved.autoMemoryEnabled}`)
+    }
+
+    return saved
+  }
+
+  async function commitInstallFolderDraft(nextValue = draft.installFolder, options = {}) {
+    const normalizedPath = String(nextValue || '').trim() || DEFAULT_SETTINGS.installFolder
+
+    if (normalizedPath === settingsRef.current.installFolder && normalizedPath === draft.installFolder) {
+      return settingsRef.current
+    }
+
+    const nextSettings = {
+      ...settingsRef.current,
+      installFolder: normalizedPath,
+      lastSelectedVersion: selectedVersion
+    }
+
+    return persistSettingsSnapshot(nextSettings, { notify: options.notify !== false })
   }
 
   useEffect(() => {
@@ -629,9 +709,7 @@ function App() {
       if (autosaveTimerRef.current) {
         clearTimeout(autosaveTimerRef.current)
       }
-      if (toastTimerRef.current) {
-        clearTimeout(toastTimerRef.current)
-      }
+      clearToastTimers()
     }
   }, [api])
 
@@ -650,35 +728,15 @@ function App() {
       }
 
       const nextSettings = {
+        ...settingsRef.current,
         ...draft,
-        memoryMb: hasValidMemory ? parsedMemoryMb : settings.memoryMb,
+        installFolder: settingsRef.current.installFolder,
+        memoryMb: hasValidMemory ? parsedMemoryMb : settingsRef.current.memoryMb,
         lastSelectedVersion: selectedVersion
       }
-      const previousInstallFolder = settings.installFolder
-
-      const saved = await api.saveSettings(nextSettings)
-      setSettings(saved)
-      setDraft((current) => ({
-        ...current,
-        installFolder: saved.installFolder,
-        javaArgs: saved.javaArgs || '',
-        memoryMb: saved.memoryMb,
-        autoMemoryEnabled: saved.autoMemoryEnabled,
-        hideLauncherOnGameLaunch: saved.hideLauncherOnGameLaunch,
-        reopenLauncherOnGameExit: saved.reopenLauncherOnGameExit,
-        skipCancelConfirm: saved.skipCancelConfirm,
-        versions: saved.versions,
-        lastSelectedVersion: saved.lastSelectedVersion
-      }))
-
-      if (saved.installFolder !== previousInstallFolder) {
-        await refreshVersionState(saved.lastSelectedVersion)
-      }
-
-      if (pendingSettingsToastRef.current) {
-        pendingSettingsToastRef.current = false
-        enqueueToast('Настройки применены', 'success', 'settings-applied')
-      }
+      const shouldNotify = pendingSettingsToastRef.current
+      pendingSettingsToastRef.current = false
+      await persistSettingsSnapshot(nextSettings, { notify: shouldNotify })
     }, 260)
 
     return () => {
@@ -686,7 +744,7 @@ function App() {
         clearTimeout(autosaveTimerRef.current)
       }
     }
-  }, [api, draft.installFolder, draft.javaArgs, draft.memoryMb, draft.autoMemoryEnabled, draft.hideLauncherOnGameLaunch, draft.reopenLauncherOnGameExit, draft.skipCancelConfirm])
+  }, [api, draft.javaArgs, draft.memoryMb, draft.autoMemoryEnabled, draft.hideLauncherOnGameLaunch, draft.reopenLauncherOnGameExit, draft.skipCancelConfirm, selectedVersion])
 
   useEffect(() => {
     if (!activeToast && !document.hidden) {
@@ -719,7 +777,7 @@ function App() {
     }
 
     const intervalId = window.setInterval(() => {
-      setHeroFactIndex((current) => (current + 1) % HERO_FACTS.length)
+      setHeroFactIndex((current) => (current + 1) % MINECRAFT_FACTS.length)
     }, 15000)
 
     return () => {
@@ -781,7 +839,7 @@ function App() {
     let cancelled = false
     const idleHandle = requestIdleTask(async () => {
       try {
-        const info = await api.getStorageInfo(draft.installFolder)
+        const info = await api.getStorageInfo(settings.installFolder)
         if (!cancelled) {
           setStorageInfo({ ...DEFAULT_STORAGE_INFO, ...info })
         }
@@ -792,7 +850,7 @@ function App() {
       cancelled = true
       cancelIdleTask(idleHandle)
     }
-  }, [api, draft.installFolder, page, bootstrapped])
+  }, [api, settings.installFolder, page, bootstrapped])
 
   useEffect(() => {
     if (page !== 'home' || lowPerformanceMode) {
@@ -821,7 +879,7 @@ function App() {
           applyVersionState(state)
         }
       } catch {}
-    }, versionState.running ? 2500 : 10000)
+    }, versionState.running ? 4000 : 15000)
 
     return () => {
       cancelled = true
@@ -829,7 +887,10 @@ function App() {
     }
   }, [api, selectedVersion, versionState.running, busy, shouldPollVersionState])
 
-  function openPage(nextPage) {
+  async function openPage(nextPage) {
+    if (page === 'settings' && draft.installFolder !== settingsRef.current.installFolder) {
+      await commitInstallFolderDraft(draft.installFolder, { notify: true })
+    }
     startTransition(() => {
       setPage(nextPage)
     })
@@ -853,7 +914,8 @@ function App() {
     if (busy) return
     setStatusText('')
     setSelectedVersion(nextVersion)
-    const nextSettings = { ...settings, lastSelectedVersion: nextVersion }
+    const nextSettings = { ...settingsRef.current, lastSelectedVersion: nextVersion }
+    settingsRef.current = nextSettings
     setSettings(nextSettings)
     await api.saveSettings(nextSettings)
     await refreshVersionState(nextVersion)
@@ -950,8 +1012,8 @@ function App() {
   async function handleBrowseFolder() {
     const picked = await api.pickFolder()
     if (!picked) return
-    pendingSettingsToastRef.current = true
     setDraft((current) => ({ ...current, installFolder: picked }))
+    await commitInstallFolderDraft(picked, { notify: true })
   }
 
   async function handleOpenFolder() {
@@ -963,6 +1025,19 @@ function App() {
   async function handleOpenUpdate() {
     if (!updateInfo.url) return
     await api.openExternal(updateInfo.url)
+  }
+
+  async function handleInstallFolderBlur() {
+    if (draft.installFolder !== settingsRef.current.installFolder) {
+      await commitInstallFolderDraft(draft.installFolder, { notify: true })
+    }
+  }
+
+  async function handleInstallFolderKeyDown(event) {
+    if (event.key !== 'Enter') return
+    event.preventDefault()
+    await commitInstallFolderDraft(event.currentTarget.value, { notify: true })
+    event.currentTarget.blur()
   }
 
   function updateDraftField(field, value, options = {}) {
@@ -1018,7 +1093,7 @@ function App() {
 
   const featureLead = versionState.running
     ? `Клиент ${selectedProfile?.title || 'Royale Master'} уже запущен. Лаунчер можно закрыть, Minecraft продолжит работать.`
-    : heroFact
+    : (selectedProfile?.notes || 'Minecraft-лаунчер с клиентом Royale Master для быстрого старта без лишней путаницы.')
 
   return (
     <div className={`app-shell ${shellLiteMode ? 'app-shell--lite' : ''}`}>
@@ -1061,9 +1136,9 @@ function App() {
         <main className="content">
           {updateInfo.available ? (
             <div className="update-banner">
-              <span>{TEXT.updateLabel} {updateInfo.version}</span>
+              <span>{TEXT.updateLabel}</span>
               <button className="update-banner__button" onClick={handleOpenUpdate}>
-                {TEXT.updateAction}
+                {`${TEXT.updateAction} v${updateInfo.version}`}
               </button>
             </div>
           ) : null}
@@ -1075,7 +1150,9 @@ function App() {
                   <span className="eyebrow">{TEXT.heroEyebrow}</span>
                   <h1>Royale Master</h1>
                   <p className="hero__lead">{TEXT.heroLead}</p>
-                  <p className="hero__fact">{heroFact}</p>
+                  <p className="hero__fact">
+                    <span key={heroFactIndex} className="hero__fact-text">{heroFact}</span>
+                  </p>
                 </div>
 
                 <section className="version-dock">
@@ -1207,6 +1284,8 @@ function App() {
                     <input
                       value={draft.installFolder}
                       onChange={(event) => updateDraftField('installFolder', event.target.value)}
+                      onBlur={handleInstallFolderBlur}
+                      onKeyDown={handleInstallFolderKeyDown}
                     />
                   </label>
                   <p className="settings-note settings-note--compact">
@@ -1345,7 +1424,7 @@ function App() {
       ) : null}
 
       {activeToast ? (
-        <div className={`toast toast--${activeToast.tone}`} role="status" aria-live="polite">
+        <div className={`toast toast--${activeToast.tone} ${activeToast.closing ? 'is-leaving' : ''}`} role="status" aria-live="polite">
           <div className="toast__body">
             <strong>{activeToast.message}</strong>
             <button className="toast__close" type="button" onClick={dismissActiveToast} aria-label="Закрыть уведомление">

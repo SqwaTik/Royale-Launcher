@@ -1,6 +1,6 @@
 {
   "name": "royale-launcher",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "author": "sqwat",
   "description": "Minecraft launcher for Royale Master",
@@ -92,6 +92,7 @@
       "artifactName": "RoyaleLauncher-${version}-${arch}.${ext}"
     },
     "nsis": {
+      "guid": "3d356d3b-7a38-4e09-9f3a-7d2f6d3aaf11",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
@@ -112,6 +113,7 @@
       "runAfterFinish": true
     },
     "nsisWeb": {
+      "guid": "3d356d3b-7a38-4e09-9f3a-7d2f6d3aaf11",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
