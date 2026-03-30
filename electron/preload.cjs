@@ -10,7 +10,7 @@ contextBridge.exposeInMainWorld('royaleApi', {
   pickFolder: () => ipcRenderer.invoke('dialog:pick-folder'),
   openFolder: (targetPath) => ipcRenderer.invoke('shell:open-folder', targetPath),
   openExternal: (targetUrl) => ipcRenderer.invoke('shell:open-external', targetUrl),
-  getStatsDashboard: () => ipcRenderer.invoke('stats:get-dashboard'),
+  getStatsDashboard: (versionName) => ipcRenderer.invoke('stats:get-dashboard', versionName),
   getVersionState: (versionName) => ipcRenderer.invoke('version:get-state', versionName),
   installVersion: (versionName) => ipcRenderer.invoke('version:install', versionName),
   pauseInstall: (paused) => ipcRenderer.invoke('version:pause-install', paused),

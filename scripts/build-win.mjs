@@ -233,10 +233,14 @@ function syncBuildOutputs(currentMode) {
 
   const installedDir = path.join('C:\\Users\\sqwat\\AppData\\Local\\Programs\\royale-launcher', 'Royale Launcher')
   if (arch === 'x64') {
-    mkdirSync(installedDir, { recursive: true })
-    cpSync(unpackedDir, installedDir, { recursive: true, force: true })
-    cleanupLegacyInstall()
-    syncShortcuts(path.join(installedDir, 'Royale Launcher.exe'))
+    try {
+      mkdirSync(installedDir, { recursive: true })
+      cpSync(unpackedDir, installedDir, { recursive: true, force: true })
+      cleanupLegacyInstall()
+      syncShortcuts(path.join(installedDir, 'Royale Launcher.exe'))
+    } catch (error) {
+      console.warn(`[build-win] Skipped installed copy sync: ${error.message}`)
+    }
   }
 
   if (currentMode === 'portable') {

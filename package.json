@@ -1,6 +1,6 @@
 {
   "name": "royale-launcher",
-  "version": "0.1.4",
+  "version": "1.0.0",
   "private": true,
   "author": "sqwat",
   "description": "Minecraft launcher for Royale Master",
@@ -14,9 +14,9 @@
     "client:pack:1.21.11": "node scripts/build-client-package.mjs 1.21.11",
     "start": "npm run build && set ELECTRON_RUN_AS_NODE=&& electron .",
     "dist:win": "npm run dist:win:setup",
-    "dist:win:setup": "node scripts/build-win.mjs online",
-    "dist:win:setup:x64": "node scripts/build-win.mjs online x64",
-    "dist:win:setup:ia32": "node scripts/build-win.mjs online ia32",
+    "dist:win:setup": "node scripts/build-win.mjs offline",
+    "dist:win:setup:x64": "node scripts/build-win.mjs offline x64",
+    "dist:win:setup:ia32": "node scripts/build-win.mjs offline ia32",
     "dist:win:online": "node scripts/build-win.mjs online",
     "dist:win:offline": "node scripts/build-win.mjs offline",
     "dist:win:portable": "node scripts/build-win.mjs portable",
@@ -99,7 +99,7 @@
       "guid": "3d356d3b-7a38-4e09-9f3a-7d2f6d3aaf11",
       "oneClick": false,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
+      "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Royale Launcher",
@@ -114,13 +114,13 @@
       "displayLanguageSelector": false,
       "warningsAsErrors": false,
       "artifactName": "RoyaleLauncherInstaller.${ext}",
-      "runAfterFinish": true
+      "runAfterFinish": false
     },
     "nsisWeb": {
       "guid": "3d356d3b-7a38-4e09-9f3a-7d2f6d3aaf11",
       "oneClick": false,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
+      "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Royale Launcher",
@@ -135,7 +135,7 @@
       "displayLanguageSelector": false,
       "warningsAsErrors": false,
       "artifactName": "RoyaleLauncherInstaller.${ext}",
-      "runAfterFinish": true
+      "runAfterFinish": false
     }
   }
 }

@@ -1,5 +1,7 @@
-import { memo, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, memo, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { MINECRAFT_FACTS } from './minecraftFacts'
+
+const LazyStatsPage = lazy(() => import('./StatsPage'))
 
 const VERSION_ART_IMAGES = {
   '1.21.11': new URL('./assets/version-art/1.21.11.jpg', import.meta.url).href,
@@ -38,6 +40,67 @@ const DEFAULT_PROGRESS = {
   label: ''
 }
 
+const UNKNOWN_LABEL = 'Unknown'
+
+const DEFAULT_GAMEPLAY_STATS = {
+  available: false,
+  filePath: '',
+  firstSeenAt: '',
+  firstSeenAtMs: 0,
+  updatedAt: '',
+  updatedAtMs: 0,
+  sessionStartedAt: '',
+  sessionStartedAtMs: 0,
+  totals: {
+    sessions: 0,
+    combatEntries: 0,
+    runtimeMs: 0,
+    playtimeMs: 0,
+    activeMs: 0,
+    afkMs: 0,
+    pvpMs: 0,
+    pvpAfkMs: 0
+  },
+  currentSession: {
+    sessions: 0,
+    combatEntries: 0,
+    runtimeMs: 0,
+    playtimeMs: 0,
+    activeMs: 0,
+    afkMs: 0,
+    pvpMs: 0,
+    pvpAfkMs: 0
+  },
+  statusTotals: {
+    menu: 0,
+    connecting: 0,
+    playing: 0,
+    pvp: 0,
+    afk: 0,
+    pause: 0,
+    death: 0
+  },
+  sessionStatusTotals: {
+    menu: 0,
+    connecting: 0,
+    playing: 0,
+    pvp: 0,
+    afk: 0,
+    pause: 0,
+    death: 0
+  },
+  runtime: {
+    status: '',
+    statusLabel: '',
+    serverName: '',
+    serverAddress: '',
+    worldType: '',
+    isInWorld: false,
+    isInPvp: false,
+    isAfk: false
+  }
+}
+
 const DEFAULT_VERSION_STATE = {
   installed: false,
   installDir: '',
@@ -46,6 +109,8 @@ const DEFAULT_VERSION_STATE = {
   launchableFile: '',
   channel: '',
   notes: '',
+  gameplayStats: DEFAULT_GAMEPLAY_STATS,
+  pendingInstall: null,
   running: false,
   runningPid: 0
 }
@@ -71,7 +136,35 @@ const DEFAULT_STORAGE_INFO = {
   totalBytes: 0
 }
 
-const DEFAULT_APP_VERSION = '0.1.4'
+const DEFAULT_STATS_DASHBOARD = {
+  generatedAt: '',
+  selectedVersion: '',
+  gameplay: DEFAULT_GAMEPLAY_STATS,
+  totals: {
+    launches: 0,
+    installs: 0,
+    failures: 0,
+    sessions: 0
+  },
+  periods: {
+    today: { launches: 0, installs: 0, failures: 0, sessions: 0 },
+    month: { launches: 0, installs: 0, failures: 0, sessions: 0 },
+    allTime: { launches: 0, installs: 0, failures: 0, sessions: 0 }
+  },
+  highlights: {
+    activeDays: 0,
+    favoriteVersion: null,
+    peakLaunchDay: null,
+    lastLaunchAt: '',
+    firstSeenAt: ''
+  },
+  timeline: [],
+  hourly: [],
+  versions: [],
+  recent: []
+}
+
+const DEFAULT_APP_VERSION = '1.0.0'
 
 const HERO_FACTS = [
   'Факт Royale: хороший лаунчер должен исчезать в тень, а не мешать запуску мира.',
@@ -115,7 +208,7 @@ const TEXT = {
   home: 'Главная',
   settings: 'Настройки',
   heroEyebrow: 'Minecraft launcher',
-  heroLead: 'Royale Launcher устанавливает, обновляет и запускает клиент Royale Master в одном окне.',
+  heroLead: 'Лаунчер для клиента Royale Master. Устанавливает выбранную сборку и запускает её напрямую.',
   chooseVersionTitle: 'Выберите версию',
   chooseVersionLead: 'Выберите нужную сборку клиента. Остальные версии открываются прокруткой внутри блока.',
   featureBadge: 'Royale Launcher',
@@ -189,6 +282,17 @@ function SettingsIcon() {
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M12 8.8A3.2 3.2 0 1 0 12 15.2A3.2 3.2 0 0 0 12 8.8z" />
       <path d="M20 13.1v-2.2l-2-.4a6.4 6.4 0 0 0-.5-1.2l1.2-1.7-1.6-1.6-1.7 1.2a6.4 6.4 0 0 0-1.2-.5L13.1 4h-2.2l-.4 2a6.4 6.4 0 0 0-1.2.5L7.6 5.3 6 6.9l1.2 1.7a6.4 6.4 0 0 0-.5 1.2L4 10.9v2.2l2 .4c.1.4.3.8.5 1.2L5.3 16.4 6.9 18l1.7-1.2c.4.2.8.4 1.2.5l.4 2h2.2l.4-2c.4-.1.8-.3 1.2-.5l1.7 1.2 1.6-1.6-1.2-1.7c.2-.4.4-.8.5-1.2l2-.4Z" />
+    </svg>
+  )
+}
+
+function StatsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M5 19V11" />
+      <path d="M12 19V6" />
+      <path d="M19 19v-9" />
+      <path d="M4 19h16" />
     </svg>
   )
 }
@@ -417,6 +521,10 @@ function getVersionStateChip(entry, selectedVersion, versionState) {
     return { label: TEXT.actionRunning, tone: 'ready' }
   }
 
+  if (entry.versionName === selectedVersion && versionState.pendingInstall?.paused) {
+    return { label: 'Пауза', tone: 'pending' }
+  }
+
   if (entry.versionName === selectedVersion && versionState.installed) {
     return { label: TEXT.stateReady, tone: 'ready' }
   }
@@ -447,6 +555,69 @@ function formatStorageInfo(storageInfo) {
   }
 
   return `${storageInfo.drive} · ${formatBytes(storageInfo.freeBytes)} свободно из ${formatBytes(storageInfo.totalBytes)}`
+}
+
+function formatDuration(milliseconds) {
+  const totalSeconds = Math.max(0, Math.floor((Number(milliseconds) || 0) / 1000))
+  const days = Math.floor(totalSeconds / 86400)
+  const hours = Math.floor((totalSeconds % 86400) / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+
+  if (days > 0) {
+    return `${days}д ${hours}ч ${minutes}м`
+  }
+
+  if (hours > 0) {
+    return `${hours}ч ${minutes}м`
+  }
+
+  return `${Math.max(0, minutes)}м`
+}
+
+function formatExactDuration(milliseconds) {
+  const totalSeconds = Math.max(0, Math.floor((Number(milliseconds) || 0) / 1000))
+  const days = Math.floor(totalSeconds / 86400)
+  const hours = Math.floor((totalSeconds % 86400) / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  const parts = []
+
+  if (days) parts.push(`${days} д`)
+  if (hours || days) parts.push(`${hours} ч`)
+  if (minutes || hours || days) parts.push(`${minutes} м`)
+  parts.push(`${seconds} с`)
+  return parts.join(' ')
+}
+
+function formatDateTime(value) {
+  if (!value) return UNKNOWN_LABEL
+  try {
+    return new Intl.DateTimeFormat('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(new Date(value))
+  } catch {
+    return UNKNOWN_LABEL
+  }
+}
+
+function formatGameplayStatusLabel(stats) {
+  return stats?.runtime?.statusLabel || UNKNOWN_LABEL
+}
+
+function getGameplayStatusRows(stats) {
+  const durations = stats?.statusTotals || DEFAULT_GAMEPLAY_STATS.statusTotals
+  return [
+    { key: 'playing', label: 'В игре', value: formatDuration(durations.playing) },
+    { key: 'pvp', label: 'В PvP', value: formatDuration(durations.pvp) },
+    { key: 'afk', label: 'АФК', value: formatDuration(durations.afk) },
+    { key: 'pause', label: 'Пауза', value: formatDuration(durations.pause) },
+    { key: 'menu', label: 'Меню', value: formatDuration(durations.menu) },
+    { key: 'connecting', label: 'Подключение', value: formatDuration(durations.connecting) }
+  ]
 }
 
 function requestIdleTask(callback, timeout = 1) {
@@ -526,6 +697,15 @@ function App() {
   const shouldPollVersionState = page === 'home' || versionState.running || showCloseLauncherPrompt
   const shellLiteMode = lowPerformanceMode || page === 'settings' || !showVersionArt
   const heroFact = MINECRAFT_FACTS[heroFactIndex % MINECRAFT_FACTS.length]
+  const gameplayStats = versionState.gameplayStats || DEFAULT_GAMEPLAY_STATS
+  const gameplayPlaytimeLabel = gameplayStats.available ? formatDuration(gameplayStats.totals.playtimeMs) : 'Пока нет данных'
+  const gameplayStatusLabel = gameplayStats.available ? formatGameplayStatusLabel(gameplayStats) : UNKNOWN_LABEL
+  const gameplayActivityLabel = gameplayStats.available ? formatDuration(gameplayStats.totals.activeMs) : 'Появится после первого запуска'
+  const gameplayServerLabel = gameplayStats.runtime.serverName || gameplayStats.runtime.serverAddress || UNKNOWN_LABEL
+  const heroSurfaceStyle = useMemo(() => ({
+    '--hero-art-image': showVersionArt ? `url("${selectedArt.image}")` : 'none',
+    '--hero-art-position': selectedArt.position || 'center center'
+  }), [selectedArt.image, selectedArt.position, showVersionArt])
 
   useEffect(() => {
     settingsRef.current = settings
@@ -931,7 +1111,9 @@ function App() {
     setBusy(true)
     setActionMode(versionState.installed ? 'launch' : 'install')
     setStatusText('')
-    setInstallProgress(DEFAULT_PROGRESS)
+    if (!versionState.pendingInstall?.paused) {
+      setInstallProgress(DEFAULT_PROGRESS)
+    }
 
     try {
       if (versionState.installed) {
@@ -1004,10 +1186,26 @@ function App() {
 
   useEffect(() => {
     if (busy) return
-    setInstallPaused(false)
+    setInstallPaused(Boolean(versionState.pendingInstall?.paused))
     setShowCancelPrompt(false)
     setCancelRememberChoice(false)
-  }, [busy])
+  }, [busy, versionState.pendingInstall])
+
+  useEffect(() => {
+    if (busy) return
+
+    if (versionState.pendingInstall?.paused) {
+      setInstallProgress({
+        ...DEFAULT_PROGRESS,
+        ...versionState.pendingInstall
+      })
+      setStatusText(versionState.pendingInstall.statusMessage || 'Загрузка на паузе')
+      return
+    }
+
+    setInstallProgress(DEFAULT_PROGRESS)
+    setStatusText('')
+  }, [versionState.pendingInstall, busy, selectedVersion])
 
   async function handleBrowseFolder() {
     const picked = await api.pickFolder()
@@ -1061,11 +1259,13 @@ function App() {
     ? actionMode === 'launch'
       ? 'Запускаю...'
       : getProgressTitle(installProgress)
+    : versionState.pendingInstall?.paused
+      ? 'Продолжить'
     : versionState.running
       ? TEXT.actionRunning
       : versionState.installed
-      ? TEXT.actionLaunch
-      : versionState.hasSource
+        ? TEXT.actionLaunch
+        : versionState.hasSource
         ? TEXT.actionInstall
         : TEXT.actionUnavailable
 
@@ -1077,6 +1277,8 @@ function App() {
     ? actionMode === 'launch'
       ? statusText || 'Подготавливаю запуск Minecraft'
       : progressStatusText || statusText || 'Подготавливаю клиент'
+    : versionState.pendingInstall?.paused
+      ? progressStatusText || versionState.pendingInstall.statusMessage || 'Загрузка на паузе'
     : versionState.running
       ? `Minecraft уже запущен${versionState.runningPid ? ` · PID ${versionState.runningPid}` : ''}. Нажмите, чтобы закрыть лаунчер.`
     : versionState.installed
@@ -1093,7 +1295,7 @@ function App() {
 
   const featureLead = versionState.running
     ? `Клиент ${selectedProfile?.title || 'Royale Master'} уже запущен. Лаунчер можно закрыть, Minecraft продолжит работать.`
-    : (selectedProfile?.notes || 'Minecraft-лаунчер с клиентом Royale Master для быстрого старта без лишней путаницы.')
+    : (selectedProfile?.notes || 'Лаунчер для клиента Royale Master с отдельной установкой и прямым запуском.')
 
   return (
     <div className={`app-shell ${shellLiteMode ? 'app-shell--lite' : ''}`}>
@@ -1127,6 +1329,9 @@ function App() {
             <NavButton active={page === 'home'} label={TEXT.home} onClick={() => openPage('home')}>
               <HomeIcon />
             </NavButton>
+            <NavButton active={page === 'stats'} label={TEXT.stats} onClick={() => openPage('stats')}>
+              <StatsIcon />
+            </NavButton>
             <NavButton active={page === 'settings'} label={TEXT.settings} onClick={() => openPage('settings')}>
               <SettingsIcon />
             </NavButton>
@@ -1143,7 +1348,10 @@ function App() {
           ) : null}
 
           {page === 'home' ? (
-            <section className={`hero page-surface ${updateInfo.available ? 'has-update-banner' : ''}`}>
+            <section
+              className={`hero page-surface ${updateInfo.available ? 'has-update-banner' : ''}`}
+              style={heroSurfaceStyle}
+            >
               <div className="hero__column hero__column--main">
                 <div className="hero__intro">
                   <span className="eyebrow">{TEXT.heroEyebrow}</span>
@@ -1209,17 +1417,26 @@ function App() {
                       <h2>{selectedProfile?.versionName || '-'}</h2>
                       <p className="feature-stage__title">{selectedProfile?.title || 'Royale Master'}</p>
                       <p className="feature-stage__lead">{featureLead}</p>
-                    </div>
-
-                    <div className="feature-stage__fact">
-                      <span className="section-label">Minecraft</span>
-                      <p key={heroFactIndex} className="feature-stage__fact-text">{heroFact}</p>
+                      <div className="feature-stage__fact-inline">
+                        <span className="section-label section-label--fact">Minecraft</span>
+                        <p key={heroFactIndex} className="feature-stage__fact-text">{heroFact}</p>
+                      </div>
                     </div>
 
                     <div className="feature-stage__details">
                       <div className="feature-detail feature-detail--wide">
                         <span>{TEXT.folderLabel}</span>
                         <strong>{versionState.installDir || 'Папка будет создана при первой установке'}</strong>
+                      </div>
+                      <div className="feature-detail">
+                        <span>Наиграно</span>
+                        <strong>{gameplayPlaytimeLabel}</strong>
+                        <small>{gameplayActivityLabel}</small>
+                      </div>
+                      <div className="feature-detail">
+                        <span>Статус</span>
+                        <strong>{gameplayStatusLabel}</strong>
+                        <small>{gameplayServerLabel}</small>
                       </div>
                     </div>
 
@@ -1269,7 +1486,23 @@ function App() {
               </aside>
             </section>
           ) : page === 'stats' ? (
-            <StatsStubPage hasUpdateBanner={updateInfo.available} />
+            <Suspense
+              fallback={(
+                <section className={`stats-page page-surface ${updateInfo.available ? 'has-update-banner' : ''}`}>
+                  <div className="stats-page__header">
+                    <span className="eyebrow">Royale stats</span>
+                    <h1>{TEXT.stats}</h1>
+                    <p className="stats-page__lead">Загружаю игровую статистику и историю запусков.</p>
+                  </div>
+                </section>
+              )}
+            >
+              <LazyStatsPage
+                api={api}
+                selectedVersion={selectedVersion}
+                hasUpdateBanner={updateInfo.available}
+              />
+            </Suspense>
           ) : (
             <section className={`settings page-surface ${updateInfo.available ? 'has-update-banner' : ''}`}>
               <div className="settings__header">

@@ -18,6 +18,7 @@ let yauzlModule = null
 let isQuitRequested = false
 let closeInterceptInFlight = false
 let windowIconCache = null
+let windowIconPathCache = ''
 let versionCatalogCache = null
 let launcherConfigCache = null
 let settingsCache = null
@@ -25,6 +26,7 @@ let javaExecutableCache = null
 let installController = null
 let launchController = null
 let runningClientWatcher = null
+let installResumeStateCache = null
 const jsonFileCache = new Map()
 
 const APP_ID = 'com.royale.launcher'
@@ -86,7 +88,8 @@ function createInstallController() {
   return {
     paused: false,
     cancelled: false,
-    waiters: []
+    waiters: [],
+    resumeState: null
   }
 }
 
@@ -130,9 +133,24 @@ function releaseInstallWaiters() {
   }
 }
 
-function pauseInstallFlow(paused) {
+async function pauseInstallFlow(paused) {
   const controller = getInstallController()
   controller.paused = Boolean(paused)
+
+  if (controller.paused && controller.resumeState?.stage === 'download') {
+    await saveInstallResumeState({
+      ...controller.resumeState,
+      paused: true,
+      updatedAt: new Date().toISOString()
+    })
+  } else if (!controller.paused && controller.resumeState?.stage === 'download') {
+    await saveInstallResumeState({
+      ...controller.resumeState,
+      paused: false,
+      updatedAt: new Date().toISOString()
+    })
+  }
+
   if (!controller.paused) {
     releaseInstallWaiters()
   }
@@ -140,11 +158,17 @@ function pauseInstallFlow(paused) {
   return controller.paused
 }
 
-function cancelInstallFlow() {
+async function cancelInstallFlow() {
   const controller = getInstallController()
   controller.cancelled = true
   controller.paused = false
+  const tempFile = controller.resumeState?.tempFile || ''
+  controller.resumeState = null
   releaseInstallWaiters()
+  await clearInstallResumeState()
+  if (tempFile && fs.existsSync(tempFile)) {
+    await fsp.rm(tempFile, { force: true })
+  }
 }
 
 function cancelLaunchFlow() {
@@ -281,25 +305,72 @@ const ARCHIVE_SECTION_TITLES = {
   files: 'files'
 }
 
-function getWindowIcon() {
-  if (windowIconCache && !windowIconCache.isEmpty()) {
-    return windowIconCache
-  }
-
-  const candidates = [
-    path.join(process.resourcesPath || '', 'icon.png'),
+function getIconCandidates() {
+  const windowsCandidates = [
     path.join(process.resourcesPath || '', 'icon.ico'),
-    path.join(__dirname, '..', 'build', 'icon.png'),
     path.join(__dirname, '..', 'build', 'icon.ico'),
-    path.join(app.getAppPath(), 'build', 'icon.png'),
     path.join(app.getAppPath(), 'build', 'icon.ico'),
+    path.join(process.resourcesPath || '', 'icon.png'),
+    path.join(__dirname, '..', 'build', 'icon.png'),
+    path.join(app.getAppPath(), 'build', 'icon.png'),
     path.join(app.getAppPath(), 'dist-renderer', 'launcher-mark.png'),
     path.join(app.getAppPath(), 'public', 'launcher-mark.png'),
     path.join(__dirname, '..', 'dist-renderer', 'launcher-mark.png'),
     path.join(__dirname, '..', 'public', 'launcher-mark.png')
   ]
 
-  for (const candidate of candidates) {
+  const genericCandidates = [
+    path.join(process.resourcesPath || '', 'icon.png'),
+    path.join(__dirname, '..', 'build', 'icon.png'),
+    path.join(app.getAppPath(), 'build', 'icon.png'),
+    path.join(app.getAppPath(), 'dist-renderer', 'launcher-mark.png'),
+    path.join(app.getAppPath(), 'public', 'launcher-mark.png'),
+    path.join(__dirname, '..', 'dist-renderer', 'launcher-mark.png'),
+    path.join(__dirname, '..', 'public', 'launcher-mark.png'),
+    path.join(process.resourcesPath || '', 'icon.ico'),
+    path.join(__dirname, '..', 'build', 'icon.ico'),
+    path.join(app.getAppPath(), 'build', 'icon.ico')
+  ]
+
+  return process.platform === 'win32'
+    ? windowsCandidates
+    : genericCandidates
+}
+
+function getWindowIconPath() {
+  if (windowIconPathCache && fs.existsSync(windowIconPathCache)) {
+    return windowIconPathCache
+  }
+
+  for (const candidate of getIconCandidates()) {
+    if (fs.existsSync(candidate)) {
+      windowIconPathCache = candidate
+      return windowIconPathCache
+    }
+  }
+
+  return ''
+}
+
+function getWindowIcon() {
+  if (windowIconCache && !windowIconCache.isEmpty()) {
+    return windowIconCache
+  }
+
+  const iconPath = getWindowIconPath()
+  if (!iconPath) {
+    return undefined
+  }
+
+  try {
+    const image = nativeImage.createFromPath(iconPath)
+    if (!image.isEmpty()) {
+      windowIconCache = image
+      return windowIconCache
+    }
+  } catch {}
+
+  for (const candidate of getIconCandidates()) {
     try {
       if (!fs.existsSync(candidate)) continue
       const image = nativeImage.createFromPath(candidate)
@@ -313,12 +384,178 @@ function getWindowIcon() {
   return undefined
 }
 
+function getTrayIconInput() {
+  if (process.platform === 'win32') {
+    return getWindowIconPath() || getWindowIcon() || nativeImage.createEmpty()
+  }
+
+  return getWindowIcon() || nativeImage.createEmpty()
+}
+
 function getSettingsPath() {
   return path.join(app.getPath('userData'), 'launcher-settings.json')
 }
 
 function getStatsPath() {
   return path.join(app.getPath('userData'), 'launcher-stats.json')
+}
+
+function getInstallResumeStatePath() {
+  return path.join(app.getPath('userData'), 'launcher-install-state.json')
+}
+
+function getInstallResumeTempFile(versionName, extension = '.zip') {
+  const safeExtension = String(extension || '.zip').startsWith('.') ? String(extension || '.zip') : `.${String(extension || 'zip')}`
+  return path.join(app.getPath('userData'), 'downloads', `${sanitizeVersionName(versionName)}${safeExtension}.part`)
+}
+
+function normalizeInstallResumeState(input) {
+  const payload = input && typeof input === 'object' ? input : {}
+  const versionName = String(payload.versionName || '').trim()
+  const sourceUrl = String(payload.sourceUrl || '').trim()
+  const tempFile = String(payload.tempFile || '').trim()
+  const stage = String(payload.stage || '').trim()
+
+  if (!versionName || !sourceUrl || !tempFile || !stage) {
+    return null
+  }
+
+  return {
+    versionName,
+    sourceUrl,
+    tempFile,
+    stage,
+    paused: Boolean(payload.paused),
+    progress: Math.max(0, Math.min(1, Number(payload.progress) || 0)),
+    current: Math.max(0, Number(payload.current) || 0),
+    total: Math.max(0, Number(payload.total) || 0),
+    label: String(payload.label || '').trim(),
+    statusMessage: String(payload.statusMessage || '').trim(),
+    updatedAt: String(payload.updatedAt || '').trim()
+  }
+}
+
+async function loadInstallResumeState() {
+  if (installResumeStateCache !== null) {
+    return installResumeStateCache
+  }
+
+  const statePath = getInstallResumeStatePath()
+
+  try {
+    const raw = await fsp.readFile(statePath, 'utf8')
+    const normalized = normalizeInstallResumeState(JSON.parse(raw))
+
+    if (!normalized || !fs.existsSync(normalized.tempFile)) {
+      installResumeStateCache = null
+      await fsp.rm(statePath, { force: true })
+      return null
+    }
+
+    try {
+      const stats = await fsp.stat(normalized.tempFile)
+      normalized.current = Math.max(normalized.current, Math.max(0, Number(stats.size) || 0))
+      normalized.progress = normalized.total > 0
+        ? Math.max(0, Math.min(1, normalized.current / normalized.total))
+        : normalized.progress
+    } catch {}
+
+    installResumeStateCache = normalized
+    return installResumeStateCache
+  } catch {
+    installResumeStateCache = null
+    return null
+  }
+}
+
+async function saveInstallResumeState(nextState) {
+  const normalized = normalizeInstallResumeState(nextState)
+  const statePath = getInstallResumeStatePath()
+
+  if (!normalized) {
+    installResumeStateCache = null
+    await fsp.rm(statePath, { force: true })
+    return null
+  }
+
+  await fsp.mkdir(path.dirname(statePath), { recursive: true })
+  await fsp.writeFile(statePath, JSON.stringify(normalized, null, 2), 'utf8')
+  installResumeStateCache = normalized
+  return installResumeStateCache
+}
+
+async function clearInstallResumeState() {
+  installResumeStateCache = null
+  await fsp.rm(getInstallResumeStatePath(), { force: true })
+}
+
+async function getResumableInstallState(versionName, sourceUrl = '') {
+  const state = await loadInstallResumeState()
+  if (!state) return null
+  if (String(state.versionName).toLowerCase() !== String(versionName || '').trim().toLowerCase()) return null
+  if (sourceUrl && state.sourceUrl && state.sourceUrl !== sourceUrl) return null
+  if (!fs.existsSync(state.tempFile)) {
+    await clearInstallResumeState()
+    return null
+  }
+
+  return state
+}
+
+function createGameplayStatsDurations() {
+  return {
+    menu: 0,
+    connecting: 0,
+    playing: 0,
+    pvp: 0,
+    afk: 0,
+    pause: 0,
+    death: 0
+  }
+}
+
+function createGameplayStatsSnapshot() {
+  return {
+    available: false,
+    filePath: '',
+    firstSeenAt: '',
+    firstSeenAtMs: 0,
+    updatedAt: '',
+    updatedAtMs: 0,
+    sessionStartedAt: '',
+    sessionStartedAtMs: 0,
+    totals: {
+      sessions: 0,
+      combatEntries: 0,
+      runtimeMs: 0,
+      playtimeMs: 0,
+      activeMs: 0,
+      afkMs: 0,
+      pvpMs: 0,
+      pvpAfkMs: 0
+    },
+    currentSession: {
+      combatEntries: 0,
+      runtimeMs: 0,
+      playtimeMs: 0,
+      activeMs: 0,
+      afkMs: 0,
+      pvpMs: 0,
+      pvpAfkMs: 0
+    },
+    statusTotals: createGameplayStatsDurations(),
+    sessionStatusTotals: createGameplayStatsDurations(),
+    runtime: {
+      status: '',
+      statusLabel: '',
+      serverName: '',
+      serverAddress: '',
+      worldType: '',
+      isInWorld: false,
+      isInPvp: false,
+      isAfk: false
+    }
+  }
 }
 
 function getKnownUserDataDirectories() {
@@ -360,7 +597,7 @@ async function migrateLegacyUserData() {
   const targetDir = app.getPath('userData')
   await fsp.mkdir(targetDir, { recursive: true })
 
-  for (const fileName of ['launcher-settings.json', 'launcher-stats.json', 'running-client.json']) {
+  for (const fileName of ['launcher-settings.json', 'launcher-stats.json', 'running-client.json', 'launcher-install-state.json']) {
     const targetPath = path.join(targetDir, fileName)
     try {
       await fsp.access(targetPath)
@@ -667,14 +904,28 @@ function getStatsEventLabel(type) {
   return 'Событие'
 }
 
-async function getStatsDashboard() {
+async function getStatsDashboard(versionName = '') {
   if (!statsDashboardDirty && statsDashboardCache) {
-    return statsDashboardCache
+    if (!versionName) {
+      return statsDashboardCache
+    }
+
+    const settings = await loadSettings()
+    const selectedVersion = settings.versions.find((entry) => entry.versionName === versionName)?.versionName || settings.lastSelectedVersion
+    return {
+      ...statsDashboardCache,
+      gameplay: await readGameplayStats(resolveVersionDirectory(settings, selectedVersion)),
+      selectedVersion
+    }
   }
 
-  const [storage, catalog] = await Promise.all([
+  const settings = await loadSettings()
+  const selectedVersion = settings.versions.find((entry) => entry.versionName === versionName)?.versionName || settings.lastSelectedVersion
+
+  const [storage, catalog, gameplay] = await Promise.all([
     loadStatsStorage(),
-    loadVersionCatalog()
+    loadVersionCatalog(),
+    readGameplayStats(resolveVersionDirectory(settings, selectedVersion))
   ])
 
   const events = storage.events
@@ -690,18 +941,12 @@ async function getStatsDashboard() {
   const startOfMonth = getStartOfMonth()
   const versionMeta = new Map(catalog.map((entry) => [entry.versionName, entry]))
 
-  const summarize = (startTime = 0) => {
-    const filtered = events.filter((entry) => entry.timestamp >= startTime)
-    return {
-      launches: filtered.filter((entry) => entry.type === 'launch_success').length,
-      installs: filtered.filter((entry) => entry.type === 'install_success').length,
-      failures: filtered.filter((entry) => entry.type.endsWith('_failure')).length,
-      sessions: filtered.filter((entry) => entry.type === 'session_start').length
-    }
-  }
+  const totals = { launches: 0, installs: 0, failures: 0, sessions: 0 }
+  const todayTotals = { launches: 0, installs: 0, failures: 0, sessions: 0 }
+  const monthTotals = { launches: 0, installs: 0, failures: 0, sessions: 0 }
 
   const timelineMap = new Map()
-  for (let index = 29; index >= 0; index -= 1) {
+  for (let index = 6; index >= 0; index -= 1) {
     const date = new Date()
     date.setHours(0, 0, 0, 0)
     date.setDate(date.getDate() - index)
@@ -715,30 +960,42 @@ async function getStatsDashboard() {
     })
   }
 
-  const hourly = Array.from({ length: 24 }, (_item, hour) => ({
-    hour,
-    label: `${String(hour).padStart(2, '0')}:00`,
-    launches: 0,
-    failures: 0
-  }))
-
   const versions = new Map()
   for (const entry of events) {
     const versionName = entry.versionName
     const meta = versionMeta.get(versionName)
     const dayKey = toDayKey(entry.at)
     const timelineEntry = timelineMap.get(dayKey)
+    const isLaunch = entry.type === 'launch_success'
+    const isInstall = entry.type === 'install_success'
+    const isSession = entry.type === 'session_start'
+    const isFailure = entry.type.endsWith('_failure')
 
-    if (timelineEntry) {
-      if (entry.type === 'launch_success') timelineEntry.launches += 1
-      if (entry.type === 'install_success') timelineEntry.installs += 1
-      if (entry.type === 'session_start') timelineEntry.sessions += 1
-      if (entry.type.endsWith('_failure')) timelineEntry.failures += 1
+    if (isLaunch) totals.launches += 1
+    if (isInstall) totals.installs += 1
+    if (isSession) totals.sessions += 1
+    if (isFailure) totals.failures += 1
+
+    if (entry.timestamp >= startOfMonth) {
+      if (isLaunch) monthTotals.launches += 1
+      if (isInstall) monthTotals.installs += 1
+      if (isSession) monthTotals.sessions += 1
+      if (isFailure) monthTotals.failures += 1
     }
 
-    const hour = getLocalDateParts(entry.at).hour
-    if (entry.type === 'launch_success') hourly[hour].launches += 1
-    if (entry.type.endsWith('_failure')) hourly[hour].failures += 1
+    if (entry.timestamp >= startOfToday) {
+      if (isLaunch) todayTotals.launches += 1
+      if (isInstall) todayTotals.installs += 1
+      if (isSession) todayTotals.sessions += 1
+      if (isFailure) todayTotals.failures += 1
+    }
+
+    if (timelineEntry) {
+      if (isLaunch) timelineEntry.launches += 1
+      if (isInstall) timelineEntry.installs += 1
+      if (isSession) timelineEntry.sessions += 1
+      if (isFailure) timelineEntry.failures += 1
+    }
 
     if (versionName) {
       const current = versions.get(versionName) || {
@@ -751,14 +1008,14 @@ async function getStatsDashboard() {
         lastLaunchAt: ''
       }
 
-      if (entry.type === 'launch_success') {
+      if (isLaunch) {
         current.launches += 1
         current.lastLaunchAt = entry.at
       }
-      if (entry.type === 'install_success') {
+      if (isInstall) {
         current.installs += 1
       }
-      if (entry.type.endsWith('_failure')) {
+      if (isFailure) {
         current.failures += 1
       }
 
@@ -786,11 +1043,11 @@ async function getStatsDashboard() {
 
   statsDashboardCache = {
     generatedAt: new Date(now).toISOString(),
-    totals: summarize(0),
+    totals,
     periods: {
-      today: summarize(startOfToday),
-      month: summarize(startOfMonth),
-      allTime: summarize(0)
+      today: todayTotals,
+      month: monthTotals,
+      allTime: totals
     },
     highlights: {
       activeDays,
@@ -806,25 +1063,15 @@ async function getStatsDashboard() {
       lastLaunchAt: lastLaunch?.at || '',
       firstSeenAt: firstSeen?.at || ''
     },
-    timeline,
-    hourly,
-    versions: versionRows.slice(0, 6),
-    recent: [...events]
-      .reverse()
-      .slice(0, 10)
-      .map((entry) => ({
-        id: entry.id,
-        type: entry.type,
-        label: getStatsEventLabel(entry.type),
-        at: entry.at,
-        timeLabel: formatRecentDateLabel(entry.at),
-        versionName: entry.versionName,
-        message: entry.message
-      }))
+    timeline
   }
 
   statsDashboardDirty = false
-  return statsDashboardCache
+  return {
+    ...statsDashboardCache,
+    gameplay,
+    selectedVersion
+  }
 }
 
 function sanitizeVersionName(value) {
@@ -1551,8 +1798,12 @@ async function getVersionStateFromSettings(settings, versionName) {
   const version = settings.versions.find((entry) => entry.versionName === versionName) || settings.versions[0]
   const installDir = resolveVersionDirectory(settings, version.versionName)
   const installedClient = await inspectInstalledClient(installDir, version.versionName)
+  const gameplayStats = await readGameplayStats(installDir)
   const source = resolveSourceDescriptor(version.source)
   const runningClient = await getActiveRunningClientState()
+  const pendingInstall = source.kind === 'remote'
+    ? await getResumableInstallState(version.versionName, source.value)
+    : null
   const running = Boolean(runningClient && runningClient.versionName.toLowerCase() === version.versionName.toLowerCase())
 
   return {
@@ -1564,6 +1815,8 @@ async function getVersionStateFromSettings(settings, versionName) {
     title: version.title,
     channel: version.channel,
     notes: version.notes,
+    gameplayStats,
+    pendingInstall,
     running,
     runningPid: running ? runningClient.pid : 0
   }
@@ -1715,6 +1968,91 @@ async function readJsonFile(filePath) {
     value
   })
   return value
+}
+
+function normalizeGameplayStatsSection(input = {}) {
+  return {
+    sessions: Math.max(0, Number(input.sessions) || 0),
+    combatEntries: Math.max(0, Number(input.combatEntries) || 0),
+    runtimeMs: Math.max(0, Number(input.runtimeMs) || 0),
+    playtimeMs: Math.max(0, Number(input.playtimeMs) || 0),
+    activeMs: Math.max(0, Number(input.activeMs) || 0),
+    afkMs: Math.max(0, Number(input.afkMs) || 0),
+    pvpMs: Math.max(0, Number(input.pvpMs) || 0),
+    pvpAfkMs: Math.max(0, Number(input.pvpAfkMs) || 0)
+  }
+}
+
+function normalizeGameplayDurations(input = {}) {
+  const defaults = createGameplayStatsDurations()
+  return {
+    menu: Math.max(0, Number(input.menu) || defaults.menu),
+    connecting: Math.max(0, Number(input.connecting) || defaults.connecting),
+    playing: Math.max(0, Number(input.playing) || defaults.playing),
+    pvp: Math.max(0, Number(input.pvp) || defaults.pvp),
+    afk: Math.max(0, Number(input.afk) || defaults.afk),
+    pause: Math.max(0, Number(input.pause) || defaults.pause),
+    death: Math.max(0, Number(input.death) || defaults.death)
+  }
+}
+
+function normalizeGameplayStats(input = {}, filePath = '') {
+  const snapshot = createGameplayStatsSnapshot()
+  return {
+    ...snapshot,
+    available: true,
+    filePath,
+    firstSeenAt: String(input.firstSeenAt || '').trim(),
+    firstSeenAtMs: Math.max(0, Number(input.firstSeenAtMs) || 0),
+    updatedAt: String(input.updatedAt || '').trim(),
+    updatedAtMs: Math.max(0, Number(input.updatedAtMs) || 0),
+    sessionStartedAt: String(input.sessionStartedAt || '').trim(),
+    sessionStartedAtMs: Math.max(0, Number(input.sessionStartedAtMs) || 0),
+    totals: normalizeGameplayStatsSection(input.totals || {}),
+    currentSession: normalizeGameplayStatsSection(input.currentSession || {}),
+    statusTotals: normalizeGameplayDurations(input.statusTotals || {}),
+    sessionStatusTotals: normalizeGameplayDurations(input.sessionStatusTotals || {}),
+    runtime: {
+      status: String(input.runtime?.status || '').trim(),
+      statusLabel: String(input.runtime?.statusLabel || '').trim(),
+      serverName: String(input.runtime?.serverName || '').trim(),
+      serverAddress: String(input.runtime?.serverAddress || '').trim(),
+      worldType: String(input.runtime?.worldType || '').trim(),
+      isInWorld: Boolean(input.runtime?.isInWorld),
+      isInPvp: Boolean(input.runtime?.isInPvp),
+      isAfk: Boolean(input.runtime?.isAfk)
+    }
+  }
+}
+
+function getGameplayStatsPath(installDir) {
+  return path.join(installDir, 'Royale', 'stats', 'launcher-game-stats.json')
+}
+
+async function readGameplayStats(installDir) {
+  if (!installDir) {
+    return createGameplayStatsSnapshot()
+  }
+
+  const statsPath = getGameplayStatsPath(installDir)
+  try {
+    await fsp.access(statsPath)
+  } catch {
+    return {
+      ...createGameplayStatsSnapshot(),
+      filePath: statsPath
+    }
+  }
+
+  try {
+    const value = await readJsonFile(statsPath)
+    return normalizeGameplayStats(value, statsPath)
+  } catch {
+    return {
+      ...createGameplayStatsSnapshot(),
+      filePath: statsPath
+    }
+  }
 }
 
 function getCurrentRuleOsName() {
@@ -2653,7 +2991,15 @@ function emit(channel, payload) {
 }
 
 function setInstallStatus(message) {
-  emit('install:status', { message })
+  const normalizedMessage = String(message || '').trim()
+  const controller = getInstallController()
+  if (controller.resumeState) {
+    controller.resumeState = {
+      ...controller.resumeState,
+      statusMessage: normalizedMessage
+    }
+  }
+  emit('install:status', { message: normalizedMessage })
 }
 
 function setLaunchStatus(message) {
@@ -2661,7 +3007,7 @@ function setLaunchStatus(message) {
 }
 
 function setInstallProgress(payload) {
-  emit('install:progress', {
+  const progressPayload = {
     stage: payload.stage || 'idle',
     progress: Math.max(0, Math.min(1, Number(payload.progress) || 0)),
     current: Math.max(0, Number(payload.current) || 0),
@@ -2670,7 +3016,22 @@ function setInstallProgress(payload) {
     sectionCurrent: Math.max(0, Number(payload.sectionCurrent) || 0),
     sectionTotal: Math.max(0, Number(payload.sectionTotal) || 0),
     label: String(payload.label || '').trim()
-  })
+  }
+
+  const controller = getInstallController()
+  if (controller.resumeState && progressPayload.stage === 'download') {
+    controller.resumeState = {
+      ...controller.resumeState,
+      stage: 'download',
+      progress: progressPayload.progress,
+      current: progressPayload.current,
+      total: progressPayload.total,
+      label: progressPayload.label || controller.resumeState.label || '',
+      paused: controller.paused
+    }
+  }
+
+  emit('install:progress', progressPayload)
 }
 
 async function rimrafSafe(targetDir, rootDir) {
@@ -2866,21 +3227,88 @@ async function extractZipWithProgress(zipPath, installDir) {
   })
 }
 
-async function downloadToFile(downloadUrl, outputPath) {
-  const response = await fetch(downloadUrl)
+async function downloadToFile(downloadUrl, outputPath, options = {}) {
+  const versionName = String(options.versionName || '').trim()
+  let received = Math.max(0, Number(options.resumeFrom) || 0)
+  let total = Math.max(0, Number(options.total) || 0)
+  let append = received > 0 && fs.existsSync(outputPath)
+  const headers = {}
+
+  if (append && total > 0 && received >= total) {
+    const controller = getInstallController()
+    controller.resumeState = {
+      versionName,
+      sourceUrl: downloadUrl,
+      tempFile: outputPath,
+      stage: 'download',
+      paused: controller.paused,
+      progress: 1,
+      current: received,
+      total,
+      label: 'Загружаю пакет',
+      statusMessage: controller.resumeState?.statusMessage || '',
+      updatedAt: new Date().toISOString()
+    }
+
+    setInstallProgress({
+      stage: 'download',
+      progress: 1,
+      current: received,
+      total,
+      label: 'Загружаю пакет'
+    })
+    return
+  }
+
+  if (append) {
+    headers.Range = `bytes=${received}-`
+  }
+
+  const response = await fetch(downloadUrl, { headers })
   if (!response.ok || !response.body) {
     throw new Error(`Ошибка загрузки: ${response.status}`)
   }
 
-  const total = Number(response.headers.get('content-length')) || 0
+  const contentLength = Number(response.headers.get('content-length')) || 0
+  if (append && response.status !== 206) {
+    append = false
+    received = 0
+    total = 0
+    await fsp.rm(outputPath, { force: true })
+  }
+
+  total = append
+    ? Math.max(total, received + contentLength)
+    : Math.max(total, contentLength)
+
   const reader = response.body.getReader()
-  const stream = fs.createWriteStream(outputPath)
-  let received = 0
+  await fsp.mkdir(path.dirname(outputPath), { recursive: true })
+  const stream = fs.createWriteStream(outputPath, { flags: append ? 'a' : 'w' })
+  const controller = getInstallController()
+
+  controller.resumeState = {
+    versionName,
+    sourceUrl: downloadUrl,
+    tempFile: outputPath,
+    stage: 'download',
+    paused: controller.paused,
+    progress: total > 0 ? received / total : 0,
+    current: received,
+    total,
+    label: 'Загружаю пакет',
+    statusMessage: controller.resumeState?.statusMessage || '',
+    updatedAt: new Date().toISOString()
+  }
+
+  await saveInstallResumeState({
+    ...controller.resumeState,
+    paused: controller.paused
+  })
 
   setInstallProgress({
     stage: 'download',
-    progress: 0,
-    current: 0,
+    progress: total > 0 ? received / total : 0,
+    current: received,
     total,
     label: 'Загружаю пакет'
   })
@@ -2912,6 +3340,15 @@ async function downloadToFile(downloadUrl, outputPath) {
     current: total > 0 ? total : received,
     total
   })
+
+  controller.resumeState = {
+    ...controller.resumeState,
+    progress: 1,
+    current: total > 0 ? total : received,
+    total,
+    paused: false,
+    updatedAt: new Date().toISOString()
+  }
 }
 
 async function installVersion(versionName) {
@@ -2957,9 +3394,14 @@ async function installVersion(versionName) {
     if (source.kind === 'remote') {
       const fileName = guessFileName(source.value, version.versionName)
       const extension = path.extname(fileName).toLowerCase() || '.zip'
-      tempFile = path.join(os.tmpdir(), `royale-${Date.now()}${extension}`)
+      const resumeState = await getResumableInstallState(version.versionName, source.value)
+      tempFile = resumeState?.tempFile || getInstallResumeTempFile(version.versionName, extension)
       setInstallStatus(`Загрузка ${version.versionName}`)
-      await downloadToFile(source.value, tempFile)
+      await downloadToFile(source.value, tempFile, {
+        versionName: version.versionName,
+        resumeFrom: resumeState?.current || 0,
+        total: resumeState?.total || 0
+      })
       assertInstallNotCancelled()
       installSourcePath = tempFile
     }
@@ -3010,6 +3452,8 @@ async function installVersion(versionName) {
       throw new Error('Клиент установлен не полностью. Проверьте пакет версии и попробуйте ещё раз.')
     }
 
+    await clearInstallResumeState()
+    getInstallController().resumeState = null
     await recordLauncherEvent('install_success', { versionName: version.versionName })
     return installedState
   } catch (error) {
@@ -3020,7 +3464,13 @@ async function installVersion(versionName) {
     throw error
   } finally {
     installInFlight = false
-    if (tempFile && fs.existsSync(tempFile)) {
+    const controller = getInstallController()
+    const keepPartialDownload = Boolean(controller.paused && controller.resumeState?.stage === 'download')
+    if (!keepPartialDownload) {
+      controller.resumeState = null
+      await clearInstallResumeState()
+    }
+    if (!keepPartialDownload && tempFile && fs.existsSync(tempFile)) {
       await fsp.rm(tempFile, { force: true })
     }
   }
@@ -3383,7 +3833,7 @@ function ensureTray() {
     return tray
   }
 
-  tray = new Tray(getWindowIcon() || nativeImage.createEmpty())
+  tray = new Tray(getTrayIconInput())
   tray.setToolTip('Royale Launcher')
   tray.setContextMenu(Menu.buildFromTemplate([
     {
@@ -3462,6 +3912,7 @@ function trackLaunchedProcess(child, settings) {
 function createWindow() {
   const cli = parseCliArgs()
   const windowIcon = getWindowIcon()
+  const windowIconPath = getWindowIconPath()
   const delayInitialShow = Boolean(cli.screenshotPath)
 
   mainWindow = new BrowserWindow({
@@ -3472,7 +3923,7 @@ function createWindow() {
     frame: false,
     show: !delayInitialShow,
     backgroundColor: '#07090d',
-    icon: windowIcon,
+    icon: process.platform === 'win32' ? (windowIconPath || windowIcon) : windowIcon,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -3609,12 +4060,12 @@ ipcMain.handle('shell:open-external', async (_event, targetUrl) => {
   }
   return true
 })
-ipcMain.handle('stats:get-dashboard', async () => getStatsDashboard())
+ipcMain.handle('stats:get-dashboard', async (_event, versionName) => getStatsDashboard(versionName))
 ipcMain.handle('version:get-state', async (_event, versionName) => getVersionState(versionName))
 ipcMain.handle('version:install', async (_event, versionName) => installVersion(versionName))
 ipcMain.handle('version:pause-install', async (_event, paused) => pauseInstallFlow(paused))
 ipcMain.handle('version:cancel-install', async () => {
-  cancelInstallFlow()
+  await cancelInstallFlow()
   return true
 })
 ipcMain.handle('version:launch', async (_event, versionName) => launchVersionTask(versionName))
