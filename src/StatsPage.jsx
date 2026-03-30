@@ -338,6 +338,7 @@ const StatsPage = memo(function StatsPage({ api, selectedVersion, hasUpdateBanne
     [timeline]
   )
   const favoriteVersion = deferredDashboard.highlights.favoriteVersion || null
+  const hasRuntimeDetails = Boolean(gameplay.available && gameplay.runtime.statusLabel)
 
   function openDetails(event) {
     event.preventDefault()
@@ -443,12 +444,16 @@ const StatsPage = memo(function StatsPage({ api, selectedVersion, hasUpdateBanne
             <div className="stats-feed__item stats-feed__item--compact">
               <div className="stats-feed__head">
                 <strong>Сейчас</strong>
-                <span>{gameplay.runtime.isInWorld ? 'В игре' : 'Не в мире'}</span>
+                <span>{hasRuntimeDetails ? (gameplay.runtime.isInWorld ? 'В игре' : 'Не в мире') : UNKNOWN_LABEL}</span>
               </div>
               <div className="stats-feed__body">
                 <p>Сервер: {gameplay.runtime.serverName || gameplay.runtime.serverAddress || UNKNOWN_LABEL}</p>
                 <p>Режим: {gameplay.runtime.worldType || UNKNOWN_LABEL}</p>
-                <p>AFK: {gameplay.runtime.isAfk ? 'Да' : 'Нет'} · PvP: {gameplay.runtime.isInPvp ? 'Да' : 'Нет'}</p>
+                <p>
+                  AFK: {hasRuntimeDetails ? (gameplay.runtime.isAfk ? 'Да' : 'Нет') : UNKNOWN_LABEL}
+                  {' · '}
+                  PvP: {hasRuntimeDetails ? (gameplay.runtime.isInPvp ? 'Да' : 'Нет') : UNKNOWN_LABEL}
+                </p>
               </div>
             </div>
           </div>

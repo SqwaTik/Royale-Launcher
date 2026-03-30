@@ -699,7 +699,7 @@ function App() {
   const heroFact = MINECRAFT_FACTS[heroFactIndex % MINECRAFT_FACTS.length]
   const gameplayStats = versionState.gameplayStats || DEFAULT_GAMEPLAY_STATS
   const gameplayPlaytimeLabel = gameplayStats.available ? formatDuration(gameplayStats.totals.playtimeMs) : 'Пока нет данных'
-  const gameplayStatusLabel = gameplayStats.available ? formatGameplayStatusLabel(gameplayStats) : 'Нет игровой сессии'
+  const gameplayStatusLabel = gameplayStats.available ? formatGameplayStatusLabel(gameplayStats) : UNKNOWN_LABEL
   const gameplayActivityLabel = gameplayStats.available ? formatDuration(gameplayStats.totals.activeMs) : 'Появится после первого запуска'
   const gameplayServerLabel = gameplayStats.runtime.serverName || gameplayStats.runtime.serverAddress || UNKNOWN_LABEL
   const heroSurfaceStyle = useMemo(() => ({
