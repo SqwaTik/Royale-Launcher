@@ -287,8 +287,11 @@ function getWindowIcon() {
   }
 
   const candidates = [
+    path.join(process.resourcesPath || '', 'icon.png'),
     path.join(process.resourcesPath || '', 'icon.ico'),
+    path.join(__dirname, '..', 'build', 'icon.png'),
     path.join(__dirname, '..', 'build', 'icon.ico'),
+    path.join(app.getAppPath(), 'build', 'icon.png'),
     path.join(app.getAppPath(), 'build', 'icon.ico'),
     path.join(app.getAppPath(), 'dist-renderer', 'launcher-mark.png'),
     path.join(app.getAppPath(), 'public', 'launcher-mark.png'),

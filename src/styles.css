@@ -436,20 +436,6 @@ input {
   line-height: 1.65;
 }
 
-.hero__fact {
-  margin: 12px 0 0;
-  max-width: 560px;
-  color: rgba(255, 226, 181, 0.78);
-  font-size: 13px;
-  line-height: 1.55;
-  min-height: 48px;
-}
-
-.hero__fact-text {
-  display: block;
-  animation: hero-fact-cycle 15s ease both;
-}
-
 .version-dock,
 .settings-card {
   border-radius: 28px;
@@ -698,11 +684,11 @@ input {
   width: min(408px, 100%);
   max-width: 100%;
   margin-left: auto;
-  margin-top: auto;
-  margin-bottom: auto;
+  margin-top: 8px;
+  margin-bottom: 8px;
   min-height: 0;
-  flex: 0 1 auto;
-  max-height: calc(100% - 42px);
+  flex: 1 1 auto;
+  max-height: none;
   overflow: auto;
   overscroll-behavior: contain;
   display: flex;
@@ -842,6 +828,25 @@ input {
   overflow: hidden;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
+}
+
+.feature-stage__fact {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.feature-stage__fact-text {
+  margin: 0;
+  color: rgba(255, 226, 181, 0.8);
+  font-size: 12px;
+  line-height: 1.55;
+  min-height: 38px;
+  display: block;
+  animation: hero-fact-cycle 15s ease both;
 }
 
 .soft-button,

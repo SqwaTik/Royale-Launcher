@@ -71,7 +71,7 @@ const DEFAULT_STORAGE_INFO = {
   totalBytes: 0
 }
 
-const DEFAULT_APP_VERSION = '0.1.2'
+const DEFAULT_APP_VERSION = '0.1.3'
 
 const HERO_FACTS = [
   'Факт Royale: хороший лаунчер должен исчезать в тень, а не мешать запуску мира.',
@@ -1150,9 +1150,6 @@ function App() {
                   <span className="eyebrow">{TEXT.heroEyebrow}</span>
                   <h1>Royale Master</h1>
                   <p className="hero__lead">{TEXT.heroLead}</p>
-                  <p className="hero__fact">
-                    <span key={heroFactIndex} className="hero__fact-text">{heroFact}</span>
-                  </p>
                 </div>
 
                 <section className="version-dock">
@@ -1213,6 +1210,11 @@ function App() {
                       <h2>{selectedProfile?.versionName || '-'}</h2>
                       <p className="feature-stage__title">{selectedProfile?.title || 'Royale Master'}</p>
                       <p className="feature-stage__lead">{featureLead}</p>
+                    </div>
+
+                    <div className="feature-stage__fact">
+                      <span className="section-label">Minecraft</span>
+                      <p key={heroFactIndex} className="feature-stage__fact-text">{heroFact}</p>
                     </div>
 
                     <div className="feature-stage__details">
