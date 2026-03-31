@@ -170,9 +170,10 @@ async function pauseInstallFlow(paused) {
 
 async function cancelInstallFlow() {
   const controller = getInstallController()
+  const persistedResumeState = controller.resumeState || await loadInstallResumeState()
   controller.cancelled = true
   controller.paused = false
-  const tempFile = controller.resumeState?.tempFile || ''
+  const tempFile = persistedResumeState?.tempFile || ''
   controller.resumeState = null
   releaseInstallWaiters()
   await clearInstallResumeState()

@@ -767,6 +767,8 @@ function App() {
   const shellLiteMode = lowPerformanceMode || page === 'settings' || !showVersionArt
   const heroFact = MINECRAFT_FACTS[heroFactIndex % MINECRAFT_FACTS.length]
   const gameplayStats = versionState.gameplayStats || DEFAULT_GAMEPLAY_STATS
+  const hasPendingInstall = Boolean(versionState.pendingInstall && !versionState.installed)
+  const pendingInstallPaused = Boolean(hasPendingInstall && versionState.pendingInstall?.paused)
   const gameplayPlaytimeLabel = gameplayStats.available ? formatDuration(gameplayStats.totals.playtimeMs) : 'Пока нет данных'
   const gameplayStatusLabel = gameplayStats.available ? formatGameplayStatusLabel(gameplayStats) : UNKNOWN_LABEL
   const gameplayActivityLabel = gameplayStats.available ? formatDuration(gameplayStats.totals.activeMs) : 'Появится после первого запуска'
@@ -1254,11 +1256,13 @@ function App() {
   }
 
   async function handlePrimaryAction() {
-    if (busy || (!versionState.installed && !versionState.hasSource)) return
+    if (busy || (!versionState.installed && !versionState.hasSource && !hasPendingInstall)) return
     if (versionState.running) {
       handleCloseLauncherRequest()
       return
     }
+
+    const nextActionMode = versionState.installed ? 'launch' : 'install'
 
     if (versionState.installed) {
       const javaReady = await ensureJavaReadyForLaunch(selectedVersion)
@@ -1268,14 +1272,14 @@ function App() {
     }
 
     setBusy(true)
-    setActionMode(versionState.installed ? 'launch' : 'install')
+    setActionMode(nextActionMode)
     setStatusText('')
-    if (!versionState.pendingInstall?.paused) {
+    if (!(nextActionMode === 'install' && hasPendingInstall)) {
       setInstallProgress(DEFAULT_PROGRESS)
     }
 
     try {
-      if (versionState.installed) {
+      if (nextActionMode === 'launch') {
         await api.launchVersion(selectedVersion)
         setStatusText('')
         await refreshVersionState(selectedVersion)
@@ -1286,8 +1290,11 @@ function App() {
       }
     } catch (error) {
       const message = normalizeRemoteErrorMessage(error?.message)
+      if (nextActionMode === 'install') {
+        await refreshVersionState(selectedVersion).catch(() => {})
+      }
       setStatusText('')
-      enqueueToast(message, getToastToneFromMessage(message), `${actionMode}-${message}`)
+      enqueueToast(message, getToastToneFromMessage(message), `${nextActionMode}-${message}`)
     } finally {
       setBusy(false)
       setActionMode('idle')
@@ -1324,6 +1331,12 @@ function App() {
   }
 
   async function handlePauseInstall() {
+    if (!busy && pendingInstallPaused) {
+      setInstallPaused(false)
+      await handlePrimaryAction()
+      return
+    }
+
     if (!busy || actionMode !== 'install') return
     const nextPaused = !installPaused
     setInstallPaused(nextPaused)
@@ -1331,7 +1344,7 @@ function App() {
   }
 
   function requestCancelBusyOperation() {
-    if (!busy) return
+    if (!busy && !hasPendingInstall) return
     if (skipCancelConfirm) {
       void confirmCancelBusyOperation(false)
       return
@@ -1347,12 +1360,30 @@ function App() {
       await persistSkipCancelConfirm(true)
     }
 
-    if (actionMode === 'install') {
+    const cancelMode = busy ? actionMode : (hasPendingInstall ? 'install' : 'idle')
+    const detachedPendingInstall = false
+    const shouldFinalizeDetachedPendingInstall = !busy && hasPendingInstall
+
+    if (cancelMode === 'install') {
       await api.cancelInstall()
+      if (detachedPendingInstall) {
+        setInstallPaused(false)
+        setInstallProgress(DEFAULT_PROGRESS)
+        setStatusText('')
+        await refreshVersionState(selectedVersion)
+        enqueueToast('РЈСЃС‚Р°РЅРѕРІРєР° РѕС‚РјРµРЅРµРЅР° РїРѕР»СЊР·РѕРІР°С‚РµР»РµРј.', 'warning', `install-cancelled-${selectedVersion}`)
+      }
+      if (shouldFinalizeDetachedPendingInstall) {
+        setInstallPaused(false)
+        setInstallProgress(DEFAULT_PROGRESS)
+        setStatusText('')
+        await refreshVersionState(selectedVersion)
+        enqueueToast('\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0430 \u043e\u0442\u043c\u0435\u043d\u0435\u043d\u0430 \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0435\u043c.', 'warning', `install-cancelled-${selectedVersion}`)
+      }
       return
     }
 
-    if (actionMode === 'launch') {
+    if (cancelMode === 'launch') {
       await api.cancelLaunch()
     }
   }
@@ -1372,7 +1403,7 @@ function App() {
   useEffect(() => {
     if (busy) return
 
-    if (versionState.pendingInstall?.paused) {
+    if (pendingInstallPaused) {
       setInstallProgress({
         ...DEFAULT_PROGRESS,
         ...versionState.pendingInstall
@@ -1383,7 +1414,7 @@ function App() {
 
     setInstallProgress(DEFAULT_PROGRESS)
     setStatusText('')
-  }, [versionState.pendingInstall, busy, selectedVersion])
+  }, [pendingInstallPaused, versionState.pendingInstall, busy, selectedVersion])
 
   async function handleBrowseFolder() {
     const picked = await api.pickFolder()
@@ -1437,7 +1468,7 @@ function App() {
     ? actionMode === 'launch'
       ? 'Запускаю...'
       : getProgressTitle(installProgress)
-    : versionState.pendingInstall?.paused
+    : hasPendingInstall
       ? 'Продолжить'
     : versionState.running
       ? TEXT.actionRunning
@@ -1447,7 +1478,7 @@ function App() {
         ? TEXT.actionInstall
         : TEXT.actionUnavailable
 
-  const buttonDisabled = busy || (!versionState.installed && !versionState.hasSource)
+  const buttonDisabled = busy || (!versionState.installed && !versionState.hasSource && !hasPendingInstall)
   const progressStatusText = formatProgressStatus(installProgress)
   const memoryInputDisabled = Boolean(draft.autoMemoryEnabled)
 
@@ -1455,7 +1486,7 @@ function App() {
     ? actionMode === 'launch'
       ? statusText || 'Подготавливаю запуск Minecraft'
       : progressStatusText || statusText || 'Подготавливаю клиент'
-    : versionState.pendingInstall?.paused
+    : hasPendingInstall
       ? progressStatusText || versionState.pendingInstall.statusMessage || 'Загрузка на паузе'
     : versionState.running
       ? `Minecraft уже запущен${versionState.runningPid ? ` · PID ${versionState.runningPid}` : ''}. Нажмите, чтобы закрыть лаунчер.`
@@ -1464,12 +1495,17 @@ function App() {
       : versionState.hasSource
         ? 'Установит клиент Royale Master'
         : 'Версия появится позже'
-
-  const displayButtonMeta = busy && actionMode === 'install' && installPaused
-    ? 'Загрузка на паузе'
+  const pendingInstallMeta = hasPendingInstall
+    ? progressStatusText || versionState.pendingInstall.statusMessage || (pendingInstallPaused ? 'Р—Р°РіСЂСѓР·РєР° РЅР° РїР°СѓР·Рµ' : 'Р—Р°РіСЂСѓР·РєСѓ РјРѕР¶РЅРѕ РїСЂРѕРґРѕР»Р¶РёС‚СЊ')
     : buttonMeta
-  const showInstallPauseControl = busy && actionMode === 'install'
-  const showBusyCancelControl = busy
+  const resolvedPendingInstallMeta = hasPendingInstall
+    ? progressStatusText || versionState.pendingInstall.statusMessage || (pendingInstallPaused ? '\u0417\u0430\u0433\u0440\u0443\u0437\u043a\u0430 \u043d\u0430 \u043f\u0430\u0443\u0437\u0435' : '\u0417\u0430\u0433\u0440\u0443\u0437\u043a\u0443 \u043c\u043e\u0436\u043d\u043e \u043f\u0440\u043e\u0434\u043e\u043b\u0436\u0438\u0442\u044c')
+    : buttonMeta
+  const displayButtonMeta = (busy && actionMode === 'install' && installPaused) || pendingInstallPaused
+    ? 'Загрузка на паузе'
+    : resolvedPendingInstallMeta
+  const showInstallPauseControl = (busy && actionMode === 'install') || pendingInstallPaused
+  const showBusyCancelControl = busy || hasPendingInstall
 
   const featureLead = versionState.running
     ? `Клиент ${selectedProfile?.title || 'Royale Master'} уже запущен. Лаунчер можно закрыть, Minecraft продолжит работать.`
