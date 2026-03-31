@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('royaleApi', {
   openExternal: (targetUrl) => ipcRenderer.invoke('shell:open-external', targetUrl),
   getStatsDashboard: (versionName) => ipcRenderer.invoke('stats:get-dashboard', versionName),
   getVersionState: (versionName) => ipcRenderer.invoke('version:get-state', versionName),
+  getJavaStatus: (versionName) => ipcRenderer.invoke('java:get-status', versionName),
+  installJava: (versionName) => ipcRenderer.invoke('java:install', versionName),
   installVersion: (versionName) => ipcRenderer.invoke('version:install', versionName),
   pauseInstall: (paused) => ipcRenderer.invoke('version:pause-install', paused),
   cancelInstall: () => ipcRenderer.invoke('version:cancel-install'),
@@ -32,5 +34,15 @@ contextBridge.exposeInMainWorld('royaleApi', {
     const listener = (_event, payload) => callback(payload)
     ipcRenderer.on('launch:status', listener)
     return () => ipcRenderer.removeListener('launch:status', listener)
+  },
+  onJavaInstallProgress: (callback) => {
+    const listener = (_event, payload) => callback(payload)
+    ipcRenderer.on('java-install:progress', listener)
+    return () => ipcRenderer.removeListener('java-install:progress', listener)
+  },
+  onJavaInstallStatus: (callback) => {
+    const listener = (_event, payload) => callback(payload)
+    ipcRenderer.on('java-install:status', listener)
+    return () => ipcRenderer.removeListener('java-install:status', listener)
   }
 })

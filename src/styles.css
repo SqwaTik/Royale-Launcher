@@ -1914,6 +1914,43 @@ input {
   border-radius: 18px;
 }
 
+.modal-dialog--java {
+  width: min(620px, 100%);
+}
+
+.java-runtime-status {
+  margin-top: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-main);
+}
+
+.java-runtime-status strong {
+  color: #ffe3a4;
+  font-size: 14px;
+}
+
+.java-runtime-progress {
+  position: relative;
+  margin-top: 10px;
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.java-runtime-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #ffe8b0 0%, #ffb55f 100%);
+  transition: width 160ms ease;
+}
+
 .primary-action--compact {
   display: inline-flex;
   align-items: center;

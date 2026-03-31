@@ -20,6 +20,7 @@ const DEFAULT_SETTINGS = {
   hideLauncherOnGameLaunch: true,
   reopenLauncherOnGameExit: true,
   skipCancelConfirm: false,
+  skipJavaPromptVersions: [],
   versions: [
     { versionName: '1.21.11', channel: 'Основная сборка', title: 'Royale Master', source: 'https://github.com/SqwaTik/Royale-Launcher-Versions/releases/latest/download/1.21.11.zip', notes: 'Клиент Royale Master для Minecraft 1.21.11 с отдельной установкой и прямым запуском.' },
     { versionName: '26.1', channel: 'Скоро', title: 'Версия готовится', source: '', notes: 'Эта версия появится позже.' },
@@ -120,6 +121,18 @@ const DEFAULT_UPDATE_INFO = {
   version: '',
   url: '',
   currentVersion: ''
+}
+
+const DEFAULT_JAVA_PROMPT = {
+  visible: false,
+  versionName: '',
+  requiredJavaVersion: 0,
+  rememberChoice: false,
+  installing: false,
+  status: '',
+  progress: 0,
+  current: 0,
+  total: 0
 }
 
 const DEFAULT_MEMORY_PROFILE = {
@@ -388,6 +401,61 @@ const ConfirmModal = memo(function ConfirmModal({
           <button className="primary-action primary-action--compact" onClick={onConfirm}>
             <span className="primary-action__body">
               <span className="primary-action__title">{confirmLabel}</span>
+            </span>
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+})
+
+const JavaRuntimeModal = memo(function JavaRuntimeModal({
+  requiredJavaVersion,
+  rememberChoice,
+  installing,
+  status,
+  progress,
+  onRememberChoiceChange,
+  onCancel,
+  onInstall
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={installing ? undefined : onCancel}>
+      <div
+        className="modal-dialog modal-dialog--java"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="java-runtime-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h3 id="java-runtime-title">Нужна Java {requiredJavaVersion}</h3>
+        <p>
+          Для этой версии клиента нужна Java {requiredJavaVersion}. Лаунчер может скачать и подготовить её автоматически.
+        </p>
+        <div className="java-runtime-status">
+          <span>{status || `Ожидаю подтверждение на установку Java ${requiredJavaVersion}`}</span>
+          <strong>{Math.round(Math.max(0, Math.min(1, Number(progress) || 0)) * 100)}%</strong>
+        </div>
+        <div className="java-runtime-progress" aria-hidden="true">
+          <span style={{ width: `${Math.max(0, Math.min(100, ((Number(progress) || 0) * 100)))}%` }} />
+        </div>
+        <label className="modal-checkbox">
+          <input
+            type="checkbox"
+            checked={rememberChoice}
+            disabled={installing}
+            onChange={(event) => onRememberChoiceChange?.(event.target.checked)}
+          />
+          <span className="modal-checkbox__box" aria-hidden="true">
+            <CheckIcon />
+          </span>
+          <span className="modal-checkbox__label">Больше не показывать</span>
+        </label>
+        <div className="modal-actions">
+          <button className="soft-button" onClick={onCancel} disabled={installing}>Нет</button>
+          <button className="primary-action primary-action--compact" onClick={onInstall} disabled={installing}>
+            <span className="primary-action__body">
+              <span className="primary-action__title">{installing ? 'Скачиваю...' : 'Скачать'}</span>
             </span>
           </button>
         </div>
@@ -679,6 +747,7 @@ function App() {
   const [showCancelPrompt, setShowCancelPrompt] = useState(false)
   const [skipCancelConfirm, setSkipCancelConfirm] = useState(false)
   const [cancelRememberChoice, setCancelRememberChoice] = useState(false)
+  const [javaPrompt, setJavaPrompt] = useState(DEFAULT_JAVA_PROMPT)
   const [updateInfo, setUpdateInfo] = useState(DEFAULT_UPDATE_INFO)
   const [memoryProfile, setMemoryProfile] = useState(DEFAULT_MEMORY_PROFILE)
   const [storageInfo, setStorageInfo] = useState(DEFAULT_STORAGE_INFO)
@@ -846,6 +915,8 @@ function App() {
     let offProgress = () => {}
     let offStatus = () => {}
     let offLaunchStatus = () => {}
+    let offJavaProgress = () => {}
+    let offJavaStatus = () => {}
 
     async function bootstrap() {
       const bootstrapPayload = await api.getBootstrap()
@@ -882,10 +953,30 @@ function App() {
       setStatusText(String(payload?.message || ''))
     })
 
+    offJavaProgress = api.onJavaInstallProgress((payload) => {
+      setJavaPrompt((current) => current.visible ? {
+        ...current,
+        progress: Number(payload?.progress) || 0,
+        current: Number(payload?.current) || 0,
+        total: Number(payload?.total) || 0,
+        installing: String(payload?.phase || '') !== 'done'
+      } : current)
+    })
+
+    offJavaStatus = api.onJavaInstallStatus((payload) => {
+      setJavaPrompt((current) => current.visible ? {
+        ...current,
+        status: String(payload?.message || '').trim(),
+        installing: current.installing && String(payload?.message || '').trim() !== ''
+      } : current)
+    })
+
     return () => {
       offProgress()
       offStatus()
       offLaunchStatus()
+      offJavaProgress()
+      offJavaStatus()
       if (autosaveTimerRef.current) {
         clearTimeout(autosaveTimerRef.current)
       }
@@ -1081,6 +1172,67 @@ function App() {
     applyVersionState(state)
   }
 
+  async function ensureJavaReadyForLaunch(versionName) {
+    const javaStatus = await api.getJavaStatus(versionName)
+    if (javaStatus?.available) {
+      return true
+    }
+
+    const requiredJavaVersion = Math.max(0, Number(javaStatus?.requiredJavaVersion) || 0)
+    const suppressed = Array.isArray(settingsRef.current.skipJavaPromptVersions)
+      && settingsRef.current.skipJavaPromptVersions.includes(requiredJavaVersion)
+
+    if (suppressed) {
+      enqueueToast(`Нужна Java ${requiredJavaVersion}. Установка пропущена по настройке.`, 'warning', `java-suppressed-${requiredJavaVersion}`)
+      return false
+    }
+
+    setJavaPrompt({
+      ...DEFAULT_JAVA_PROMPT,
+      visible: true,
+      versionName,
+      requiredJavaVersion
+    })
+    return false
+  }
+
+  function closeJavaPrompt() {
+    setJavaPrompt(DEFAULT_JAVA_PROMPT)
+  }
+
+  async function handleCancelJavaPrompt() {
+    if (javaPrompt.rememberChoice && javaPrompt.requiredJavaVersion) {
+      await persistSkipJavaPrompt(javaPrompt.requiredJavaVersion, true)
+    }
+    closeJavaPrompt()
+  }
+
+  async function handleInstallJavaPrompt() {
+    setJavaPrompt((current) => ({
+      ...current,
+      installing: true,
+      status: current.status || `Скачиваю Java ${current.requiredJavaVersion}...`
+    }))
+
+    try {
+      await api.installJava(javaPrompt.versionName)
+      if (javaPrompt.rememberChoice && javaPrompt.requiredJavaVersion) {
+        await persistSkipJavaPrompt(javaPrompt.requiredJavaVersion, false)
+      }
+      enqueueToast(`Java ${javaPrompt.requiredJavaVersion} установлена`, 'success', `java-installed-${javaPrompt.requiredJavaVersion}`)
+      closeJavaPrompt()
+      await handlePrimaryAction()
+    } catch (error) {
+      const message = normalizeRemoteErrorMessage(error?.message)
+      setJavaPrompt((current) => ({
+        ...current,
+        installing: false,
+        status: message || current.status
+      }))
+      enqueueToast(message || 'Не удалось установить Java', 'error', `java-install-error-${message}`)
+    }
+  }
+
   function handleCloseLauncherRequest() {
     if (versionState.running) {
       setShowCloseLauncherPrompt(true)
@@ -1106,6 +1258,13 @@ function App() {
     if (versionState.running) {
       handleCloseLauncherRequest()
       return
+    }
+
+    if (versionState.installed) {
+      const javaReady = await ensureJavaReadyForLaunch(selectedVersion)
+      if (!javaReady) {
+        return
+      }
     }
 
     setBusy(true)
@@ -1143,6 +1302,25 @@ function App() {
     const nextSettings = { ...settings, skipCancelConfirm: nextValue }
     setSettings(nextSettings)
     await api.saveSettings(nextSettings)
+  }
+
+  async function persistSkipJavaPrompt(requiredJavaVersion, nextValue) {
+    const currentList = Array.isArray(settingsRef.current.skipJavaPromptVersions)
+      ? settingsRef.current.skipJavaPromptVersions
+      : []
+    const normalizedVersion = Math.max(0, Number(requiredJavaVersion) || 0)
+    const nextList = nextValue
+      ? [...new Set([...currentList, normalizedVersion])].filter(Boolean)
+      : currentList.filter((item) => item !== normalizedVersion)
+
+    const nextSettings = {
+      ...settingsRef.current,
+      skipJavaPromptVersions: nextList
+    }
+
+    const saved = await api.saveSettings(nextSettings)
+    settingsRef.current = saved
+    setSettings(saved)
   }
 
   async function handlePauseInstall() {
@@ -1654,6 +1832,19 @@ function App() {
             setCancelRememberChoice(false)
             setShowCancelPrompt(false)
           }}
+        />
+      ) : null}
+
+      {javaPrompt.visible ? (
+        <JavaRuntimeModal
+          requiredJavaVersion={javaPrompt.requiredJavaVersion}
+          rememberChoice={javaPrompt.rememberChoice}
+          installing={javaPrompt.installing}
+          status={javaPrompt.status}
+          progress={javaPrompt.progress}
+          onRememberChoiceChange={(value) => setJavaPrompt((current) => ({ ...current, rememberChoice: value }))}
+          onCancel={handleCancelJavaPrompt}
+          onInstall={handleInstallJavaPrompt}
         />
       ) : null}
 

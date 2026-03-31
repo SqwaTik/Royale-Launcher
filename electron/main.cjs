@@ -27,6 +27,7 @@ let installController = null
 let launchController = null
 let runningClientWatcher = null
 let installResumeStateCache = null
+let javaInstallInFlight = null
 const jsonFileCache = new Map()
 
 const APP_ID = 'com.royale.launcher'
@@ -34,6 +35,14 @@ const APP_STORAGE_DIR = 'royale-launcher'
 const BUNDLED_VERSION_CATALOG_PATH = path.join(__dirname, 'version-catalog.json')
 const BUNDLED_LAUNCHER_CONFIG_PATH = path.join(__dirname, 'launcher-config.json')
 const MAX_STATS_EVENTS = 4000
+const APP_NETWORK_HEADERS = {
+  'User-Agent': 'RoyaleLauncher',
+  'Accept': '*/*'
+}
+const MINECRAFT_VERSION_MANIFEST_URL = 'https://piston-meta.mojang.com/mc/game/version_manifest_v2.json'
+const FABRIC_PROFILE_BASE_URL = 'https://meta.fabricmc.net/v2/versions/loader'
+const ADOPTIUM_API_BASE_URL = 'https://api.adoptium.net/v3/assets/latest'
+const RUNTIME_DOWNLOAD_CONCURRENCY = 8
 
 Menu.setApplicationMenu(null)
 app.setName('Royale Launcher')
@@ -76,7 +85,8 @@ const DEFAULT_SETTINGS = {
   lastSelectedVersion: '1.21.11',
   hideLauncherOnGameLaunch: true,
   reopenLauncherOnGameExit: true,
-  skipCancelConfirm: false
+  skipCancelConfirm: false,
+  skipJavaPromptVersions: []
 }
 
 const DEFAULT_LAUNCHER_CONFIG = {
@@ -203,6 +213,7 @@ const DEFAULT_VERSION_CATALOG = [
     channel: 'Основная сборка',
     title: 'Royale Master',
     source: 'https://github.com/SqwaTik/Royale-Launcher-Versions/releases/latest/download/1.21.11.zip',
+    javaVersion: 21,
     notes: 'Клиент Royale Master для Minecraft 1.21.11 с отдельной установкой и прямым запуском.'
   },
   {
@@ -210,6 +221,10 @@ const DEFAULT_VERSION_CATALOG = [
     channel: 'Скоро',
     title: 'Версия готовится',
     source: '',
+    javaVersion: 8,
+    javaVersion: 8,
+    javaVersion: 21,
+    javaVersion: 21,
     notes: 'Эта версия появится позже.'
   },
   {
@@ -266,7 +281,8 @@ const DEFAULT_CLIENT_MANIFESTS = {
     minecraftVersion: '1.21.11',
     fabricLoaderVersion: '0.18.4',
     gameDir: '.',
-    icon: 'Grass'
+    icon: 'Grass',
+    javaVersion: 21
   },
   '26.1': {
     type: 'fabric-instance',
@@ -274,7 +290,8 @@ const DEFAULT_CLIENT_MANIFESTS = {
     minecraftVersion: '26.1',
     fabricLoaderVersion: '0.18.5',
     gameDir: '.',
-    icon: 'Grass'
+    icon: 'Grass',
+    javaVersion: 21
   },
   '1.21.4': {
     type: 'fabric-instance',
@@ -282,7 +299,8 @@ const DEFAULT_CLIENT_MANIFESTS = {
     minecraftVersion: '1.21.4',
     fabricLoaderVersion: '0.18.5',
     gameDir: '.',
-    icon: 'Grass'
+    icon: 'Grass',
+    javaVersion: 21
   },
   '1.16.5': {
     type: 'fabric-instance',
@@ -290,7 +308,17 @@ const DEFAULT_CLIENT_MANIFESTS = {
     minecraftVersion: '1.16.5',
     fabricLoaderVersion: '0.18.4',
     gameDir: '.',
-    icon: 'Grass'
+    icon: 'Grass',
+    javaVersion: 8
+  },
+  '1.12.2': {
+    type: 'fabric-instance',
+    profileName: 'Royale Master 1.12.2',
+    minecraftVersion: '1.12.2',
+    fabricLoaderVersion: '0.16.10',
+    gameDir: '.',
+    icon: 'Grass',
+    javaVersion: 8
   }
 }
 
@@ -1088,7 +1116,8 @@ function normalizeCatalog(input) {
       channel: String(item?.channel ?? '').trim() || 'Каталог',
       title: String(item?.title ?? '').trim() || 'Royale Build',
       source: String(item?.source ?? '').trim(),
-      notes: String(item?.notes ?? '').trim()
+      notes: String(item?.notes ?? '').trim(),
+      javaVersion: Math.max(0, Number(item?.javaVersion) || 0)
     }))
     .filter((item) => item.versionName)
     .filter((item, index, list) => list.findIndex((entry) => entry.versionName.toLowerCase() === item.versionName.toLowerCase()) === index)
@@ -1098,6 +1127,12 @@ function normalizeCatalog(input) {
 
 function normalizeSettings(input) {
   const payload = input && typeof input === 'object' ? input : {}
+  const skipJavaPromptVersions = Array.isArray(payload.skipJavaPromptVersions)
+    ? payload.skipJavaPromptVersions
+      .map((item) => Math.max(0, Number(item) || 0))
+      .filter(Boolean)
+      .filter((item, index, list) => list.indexOf(item) === index)
+    : DEFAULT_SETTINGS.skipJavaPromptVersions
 
   return {
     installFolder: String(payload.installFolder || DEFAULT_SETTINGS.installFolder).trim() || DEFAULT_SETTINGS.installFolder,
@@ -1107,7 +1142,8 @@ function normalizeSettings(input) {
     lastSelectedVersion: String(payload.lastSelectedVersion || DEFAULT_SETTINGS.lastSelectedVersion).trim() || DEFAULT_SETTINGS.lastSelectedVersion,
     hideLauncherOnGameLaunch: payload.hideLauncherOnGameLaunch !== false,
     reopenLauncherOnGameExit: payload.reopenLauncherOnGameExit !== false,
-    skipCancelConfirm: payload.skipCancelConfirm === true
+    skipCancelConfirm: payload.skipCancelConfirm === true,
+    skipJavaPromptVersions
   }
 }
 
@@ -1345,6 +1381,7 @@ function normalizeClientManifest(input, versionName) {
   const type = String(payload.type || fallback?.type || '').trim()
   const minecraftVersion = String(payload.minecraftVersion || fallback?.minecraftVersion || versionName || '').trim()
   const fabricLoaderVersion = String(payload.fabricLoaderVersion || fallback?.fabricLoaderVersion || '').trim()
+  const javaVersion = Math.max(0, Number(payload.javaVersion || fallback?.javaVersion) || 0)
 
   if (type !== 'fabric-instance' || !minecraftVersion || !fabricLoaderVersion) {
     return fallback
@@ -1360,6 +1397,7 @@ function normalizeClientManifest(input, versionName) {
     profileName,
     minecraftVersion,
     fabricLoaderVersion,
+    javaVersion,
     gameDir: normalizeRelativeGamePath(payload.gameDir ?? fallback?.gameDir ?? '.'),
     icon: String(payload.icon || fallback?.icon || '').trim()
   }
@@ -1701,11 +1739,10 @@ async function inspectInstalledClient(installDir, versionName) {
 
     royaleJar = royaleJar || await findMatchingFile(modsDir, /^royale-.*\.jar$/i)
     fabricApiJar = fabricApiJar || await findMatchingFile(modsDir, /^fabric-api-.*\.jar$/i)
-    const launchableFile = await findMatchingFile(installDir, /^launch\.(bat|cmd)$/i)
 
     return {
       installed: Boolean(royaleJar && fabricApiJar),
-      launchableFile: launchableFile || royaleJar || ''
+      launchableFile: royaleJar || fabricApiJar || ''
     }
   }
 
@@ -1719,7 +1756,7 @@ async function inspectInstalledClient(installDir, versionName) {
 }
 
 async function findLaunchableFile(rootDir) {
-  const preferredExtensions = ['.exe', '.bat', '.cmd', '.jar']
+  const preferredExtensions = ['.exe', '.jar']
 
   async function walk(currentDir) {
     const entries = await fsp.readdir(currentDir, { withFileTypes: true })
@@ -1827,6 +1864,20 @@ async function getVersionState(versionName) {
   return getVersionStateFromSettings(settings, versionName)
 }
 
+async function getJavaStatusForVersion(versionName) {
+  const settings = await loadSettings()
+  const installDir = resolveVersionDirectory(settings, versionName)
+  const manifest = await loadClientManifest(installDir, versionName)
+  const status = await resolveJavaStatus(settings, versionName, manifest)
+
+  return {
+    available: status.available,
+    source: status.source,
+    javaExecutable: status.javaExecutable,
+    requiredJavaVersion: status.requiredJavaVersion
+  }
+}
+
 async function getBootstrapPayload() {
   const settings = await loadSettings()
   const preferredVersion = settings.versions.find((entry) => entry.versionName === settings.lastSelectedVersion && entry.source)
@@ -1860,6 +1911,123 @@ function compareVersions(left, right) {
   }
 
   return 0
+}
+
+function inferJavaVersionFromMinecraftVersion(minecraftVersion) {
+  const normalized = stripVersionPrefix(minecraftVersion)
+  const match = normalized.match(/^(\d+)\.(\d+)(?:\.(\d+))?/)
+  if (!match) {
+    return 21
+  }
+
+  const major = Number(match[1]) || 0
+  const minor = Number(match[2]) || 0
+  const patch = Number(match[3]) || 0
+
+  if (major > 1) {
+    return 21
+  }
+
+  if (minor >= 21) {
+    return 21
+  }
+
+  if (minor === 20 && patch >= 5) {
+    return 21
+  }
+
+  if (minor >= 18) {
+    return 17
+  }
+
+  if (minor === 17) {
+    return 16
+  }
+
+  return 8
+}
+
+function resolveCatalogEntry(settings, versionName) {
+  return settings?.versions?.find((entry) => String(entry?.versionName || '').trim().toLowerCase() === String(versionName || '').trim().toLowerCase()) || null
+}
+
+function resolveRequiredJavaVersion(settings, versionName, manifest = null) {
+  const fromCatalog = Math.max(0, Number(resolveCatalogEntry(settings, versionName)?.javaVersion) || 0)
+  if (fromCatalog) {
+    return fromCatalog
+  }
+
+  const fromManifest = Math.max(0, Number(manifest?.javaVersion) || 0)
+  if (fromManifest) {
+    return fromManifest
+  }
+
+  const minecraftVersion = String(manifest?.minecraftVersion || versionName || '').trim()
+  return inferJavaVersionFromMinecraftVersion(minecraftVersion)
+}
+
+function getJavaRuntimeDirectory(settings, javaVersion) {
+  return resolveSharedDirectory(settings, path.join('jre', `java-${Math.max(0, Number(javaVersion) || 0)}`))
+}
+
+function getJavaDownloadTempFile(javaVersion, fileName = '') {
+  const suffix = String(fileName || '').trim() || `java-${Math.max(0, Number(javaVersion) || 0)}.zip`
+  return path.join(app.getPath('userData'), 'downloads', suffix)
+}
+
+function getRuntimeDownloadPlatform() {
+  if (process.platform === 'win32') return 'windows'
+  if (process.platform === 'darwin') return 'mac'
+  return 'linux'
+}
+
+function getRuntimeDownloadArchitecture() {
+  if (process.arch === 'x64') return 'x64'
+  if (process.arch === 'arm64') return 'aarch64'
+  if (process.arch === 'ia32') return 'x86'
+  return 'x64'
+}
+
+function parseJavaMajorVersion(rawOutput) {
+  const value = String(rawOutput || '')
+  const match = value.match(/version "(.*?)"/i)
+  const versionString = match ? match[1] : ''
+  if (!versionString) {
+    return 0
+  }
+
+  const legacyMatch = versionString.match(/^1\.(\d+)\./)
+  if (legacyMatch) {
+    return Number(legacyMatch[1]) || 0
+  }
+
+  const modernMatch = versionString.match(/^(\d+)(?:[._-]|$)/)
+  return modernMatch ? (Number(modernMatch[1]) || 0) : 0
+}
+
+function getJavaExecutableMajorVersion(executablePath) {
+  if (!executablePath || !fs.existsSync(executablePath)) {
+    return 0
+  }
+
+  try {
+    const result = spawnSync(executablePath, ['-version'], {
+      encoding: 'utf8',
+      windowsHide: true
+    })
+    return parseJavaMajorVersion(`${result.stderr || ''}\n${result.stdout || ''}`)
+  } catch {
+    return 0
+  }
+}
+
+function isJavaExecutableCompatible(executablePath, requiredJavaVersion) {
+  const required = Math.max(0, Number(requiredJavaVersion) || 0)
+  if (!required) {
+    return Boolean(executablePath && fs.existsSync(executablePath))
+  }
+
+  return getJavaExecutableMajorVersion(executablePath) === required
 }
 
 function normalizeMemoryStep(value, minimum = 2048) {
@@ -2251,6 +2419,135 @@ function mergeLibraries(baseLibraries, extraLibraries) {
   return [...merged.values()]
 }
 
+function sleep(timeoutMs) {
+  return new Promise((resolve) => setTimeout(resolve, timeoutMs))
+}
+
+async function fetchWithRetry(url, options = {}, retries = 2) {
+  let lastError = null
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        ...options,
+        redirect: options.redirect || 'follow',
+        headers: {
+          ...APP_NETWORK_HEADERS,
+          ...(options.headers || {})
+        }
+      })
+
+      if (response.ok) {
+        return response
+      }
+
+      if (attempt >= retries || ![408, 425, 429, 500, 502, 503, 504].includes(response.status)) {
+        return response
+      }
+
+      await sleep(450 * (attempt + 1))
+    } catch (error) {
+      lastError = error
+      if (attempt >= retries) {
+        throw error
+      }
+      await sleep(450 * (attempt + 1))
+    }
+  }
+
+  throw lastError || new Error(`Не удалось получить ответ от ${url}`)
+}
+
+async function fetchJson(url) {
+  const response = await fetchWithRetry(url, {
+    headers: {
+      Accept: 'application/json'
+    }
+  })
+
+  if (!response.ok) {
+    throw new Error(`Ошибка загрузки JSON: ${response.status} ${url}`)
+  }
+
+  return response.json()
+}
+
+async function downloadRemoteFile(url, destinationPath, options = {}) {
+  const response = await fetchWithRetry(url, options.requestOptions || {})
+  if (!response.ok || !response.body) {
+    throw new Error(`Ошибка загрузки файла: ${response.status} ${url}`)
+  }
+
+  await fsp.mkdir(path.dirname(destinationPath), { recursive: true })
+  const output = fs.createWriteStream(destinationPath)
+  const reader = response.body.getReader()
+  const total = Math.max(0, Number(response.headers.get('content-length')) || 0)
+  let current = 0
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    output.write(Buffer.from(value))
+    current += value.length
+    options.onProgress?.({
+      current,
+      total,
+      progress: total > 0 ? current / total : 0
+    })
+  }
+
+  await new Promise((resolve, reject) => {
+    output.end(() => resolve())
+    output.on('error', reject)
+  })
+
+  options.onProgress?.({
+    current: total > 0 ? total : current,
+    total,
+    progress: 1
+  })
+}
+
+async function runWithConcurrency(items, concurrency, worker) {
+  if (!items.length) {
+    return
+  }
+
+  let cursor = 0
+  async function next() {
+    const currentIndex = cursor
+    cursor += 1
+    if (currentIndex >= items.length) {
+      return
+    }
+
+    await worker(items[currentIndex], currentIndex)
+    await next()
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => next()))
+}
+
+async function resolveMinecraftVersionPayload(minecraftVersion) {
+  const manifest = await fetchJson(MINECRAFT_VERSION_MANIFEST_URL)
+  const versionEntry = (manifest.versions || []).find((entry) => entry.id === minecraftVersion)
+  if (!versionEntry?.url) {
+    throw new Error(`Minecraft ${minecraftVersion} не найден в официальном manifest.`)
+  }
+
+  return fetchJson(versionEntry.url)
+}
+
+async function resolveFabricProfilePayload(manifest) {
+  const minecraftVersion = String(manifest?.minecraftVersion || '').trim()
+  const fabricLoaderVersion = String(manifest?.fabricLoaderVersion || '').trim()
+  if (!minecraftVersion || !fabricLoaderVersion) {
+    throw new Error('В manifest клиента не хватает minecraftVersion или fabricLoaderVersion.')
+  }
+
+  return fetchJson(`${FABRIC_PROFILE_BASE_URL}/${encodeURIComponent(minecraftVersion)}/${encodeURIComponent(fabricLoaderVersion)}/profile/json`)
+}
+
 async function findJavaExecutableInDirectory(rootDir) {
   if (!rootDir || !fs.existsSync(rootDir)) {
     return ''
@@ -2286,34 +2583,344 @@ async function findJavaExecutableInDirectory(rootDir) {
   return ''
 }
 
-async function resolveJavaExecutable(settings) {
+function emitJavaInstallStatus(message) {
+  emit('java-install:status', { message: String(message || '').trim() })
+}
+
+function emitJavaInstallProgress(payload) {
+  emit('java-install:progress', {
+    phase: String(payload?.phase || '').trim(),
+    current: Math.max(0, Number(payload?.current) || 0),
+    total: Math.max(0, Number(payload?.total) || 0),
+    progress: Math.max(0, Math.min(1, Number(payload?.progress) || 0))
+  })
+}
+
+function getSystemJavaLookupCommand() {
+  return process.platform === 'win32'
+    ? { command: 'where.exe', args: ['javaw.exe', 'java.exe'] }
+    : { command: 'which', args: ['java'] }
+}
+
+function findCompatibleJavaInText(rawText, requiredJavaVersion) {
+  const candidates = String(rawText || '')
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .filter((candidate) => fs.existsSync(candidate))
+
+  return candidates.find((candidate) => isJavaExecutableCompatible(candidate, requiredJavaVersion)) || ''
+}
+
+async function resolveJavaStatus(settings, versionName, manifest = null) {
+  const requiredJavaVersion = resolveRequiredJavaVersion(settings, versionName, manifest)
   const installRoot = resolveInstallRoot(settings)
-  if (javaExecutableCache?.installRoot === installRoot && javaExecutableCache.path && fs.existsSync(javaExecutableCache.path)) {
-    return javaExecutableCache.path
+  const cacheKey = `${installRoot}::${requiredJavaVersion}`
+  if (javaExecutableCache?.key === cacheKey && javaExecutableCache.path && fs.existsSync(javaExecutableCache.path)) {
+    return {
+      available: true,
+      source: javaExecutableCache.source || 'cache',
+      javaExecutable: javaExecutableCache.path,
+      requiredJavaVersion
+    }
   }
 
-  const bundledJava = await findJavaExecutableInDirectory(resolveSharedDirectory(settings, 'jre'))
-  if (bundledJava) {
-    javaExecutableCache = { installRoot, path: bundledJava }
-    return bundledJava
+  const bundledJava = await findJavaExecutableInDirectory(getJavaRuntimeDirectory(settings, requiredJavaVersion))
+  if (isJavaExecutableCompatible(bundledJava, requiredJavaVersion)) {
+    javaExecutableCache = { key: cacheKey, path: bundledJava, source: 'bundled' }
+    return {
+      available: true,
+      source: 'bundled',
+      javaExecutable: bundledJava,
+      requiredJavaVersion
+    }
   }
 
-  const command = process.platform === 'win32' ? 'where.exe' : 'which'
-  const args = [process.platform === 'win32' ? 'javaw.exe' : 'java']
+  const legacyBundledJava = await findJavaExecutableInDirectory(resolveSharedDirectory(settings, 'jre'))
+  if (isJavaExecutableCompatible(legacyBundledJava, requiredJavaVersion)) {
+    javaExecutableCache = { key: cacheKey, path: legacyBundledJava, source: 'bundled' }
+    return {
+      available: true,
+      source: 'bundled',
+      javaExecutable: legacyBundledJava,
+      requiredJavaVersion
+    }
+  }
 
+  const lookup = getSystemJavaLookupCommand()
   try {
-    const result = spawnSync(command, args, {
+    const result = spawnSync(lookup.command, lookup.args, {
       encoding: 'utf8',
       windowsHide: true
     })
-    const discoveredPath = result.status === 0 ? findExistingPathFromText(result.stdout) : ''
+    const discoveredPath = result.status === 0 ? findCompatibleJavaInText(result.stdout, requiredJavaVersion) : ''
     if (discoveredPath) {
-      javaExecutableCache = { installRoot, path: discoveredPath }
-      return discoveredPath
+      javaExecutableCache = { key: cacheKey, path: discoveredPath, source: 'system' }
+      return {
+        available: true,
+        source: 'system',
+        javaExecutable: discoveredPath,
+        requiredJavaVersion
+      }
     }
   } catch {}
 
-  throw new Error('Java не найден. Установите Java 21 или добавьте runtime в папку jre.')
+  return {
+    available: false,
+    source: '',
+    javaExecutable: '',
+    requiredJavaVersion
+  }
+}
+
+async function resolveJavaExecutable(settings, versionName, manifest = null) {
+  const status = await resolveJavaStatus(settings, versionName, manifest)
+  if (status.available && status.javaExecutable) {
+    return status.javaExecutable
+  }
+
+  throw new Error(`Java ${status.requiredJavaVersion || 21} не найден. Скачайте подходящий runtime и попробуйте снова.`)
+}
+
+async function resolveAdoptiumRuntimePackage(requiredJavaVersion) {
+  const release = Math.max(8, Number(requiredJavaVersion) || 0)
+  const osName = getRuntimeDownloadPlatform()
+  const arch = getRuntimeDownloadArchitecture()
+
+  for (const imageType of ['jre', 'jdk']) {
+    const queryUrl = `${ADOPTIUM_API_BASE_URL}/${release}/hotspot?release_type=ga&os=${encodeURIComponent(osName)}&architecture=${encodeURIComponent(arch)}&image_type=${encodeURIComponent(imageType)}`
+    const payload = await fetchJson(queryUrl)
+    const candidate = Array.isArray(payload)
+      ? payload.find((entry) => entry?.binary?.package?.link && entry?.binary?.package?.name)
+      : null
+
+    if (candidate?.binary?.package?.link && candidate?.binary?.package?.name) {
+      return {
+        url: String(candidate.binary.package.link).trim(),
+        fileName: String(candidate.binary.package.name).trim(),
+        imageType
+      }
+    }
+  }
+
+  throw new Error(`Не удалось найти Java ${release} для ${osName} ${arch}.`)
+}
+
+async function extractJavaArchive(archivePath, destinationDir) {
+  const lowerName = archivePath.toLowerCase()
+  await fsp.rm(destinationDir, { recursive: true, force: true })
+  await fsp.mkdir(destinationDir, { recursive: true })
+
+  if (lowerName.endsWith('.zip')) {
+    await extractZipArchive(archivePath, destinationDir)
+    return
+  }
+
+  const args = ['-xf', archivePath, '-C', destinationDir]
+  const result = spawnSync('tar', args, {
+    encoding: 'utf8',
+    windowsHide: true
+  })
+
+  if (result.status !== 0) {
+    throw new Error(`Не удалось распаковать Java runtime: ${result.stderr || result.stdout || archivePath}`)
+  }
+}
+
+async function installJavaRuntime(settings, versionName, manifest = null) {
+  if (javaInstallInFlight) {
+    return javaInstallInFlight
+  }
+
+  javaInstallInFlight = (async () => {
+    const currentStatus = await resolveJavaStatus(settings, versionName, manifest)
+    if (currentStatus.available) {
+      emitJavaInstallStatus('')
+      emitJavaInstallProgress({ phase: 'idle', progress: 0, current: 0, total: 0 })
+      return currentStatus
+    }
+
+    const requiredJavaVersion = currentStatus.requiredJavaVersion || resolveRequiredJavaVersion(settings, versionName, manifest)
+    const runtimeInfo = await resolveAdoptiumRuntimePackage(requiredJavaVersion)
+    const tempFile = getJavaDownloadTempFile(requiredJavaVersion, runtimeInfo.fileName)
+    const runtimeDir = getJavaRuntimeDirectory(settings, requiredJavaVersion)
+
+    emitJavaInstallStatus(`Скачиваю Java ${requiredJavaVersion}...`)
+    emitJavaInstallProgress({ phase: 'download', progress: 0, current: 0, total: 0 })
+    await downloadRemoteFile(runtimeInfo.url, tempFile, {
+      onProgress: (progress) => {
+        emitJavaInstallProgress({
+          phase: 'download',
+          current: progress.current,
+          total: progress.total,
+          progress: progress.progress
+        })
+      }
+    })
+
+    emitJavaInstallStatus(`Распаковываю Java ${requiredJavaVersion}...`)
+    emitJavaInstallProgress({ phase: 'extract', progress: 0.96, current: 96, total: 100 })
+    await extractJavaArchive(tempFile, runtimeDir)
+    await fsp.rm(tempFile, { force: true })
+
+    const finalStatus = await resolveJavaStatus(settings, versionName, manifest)
+    if (!finalStatus.available) {
+      throw new Error(`Java ${requiredJavaVersion} скачалась, но не была найдена после распаковки.`)
+    }
+
+    emitJavaInstallStatus(`Java ${requiredJavaVersion} готова.`)
+    emitJavaInstallProgress({ phase: 'done', progress: 1, current: 1, total: 1 })
+    return finalStatus
+  })()
+
+  try {
+    return await javaInstallInFlight
+  } finally {
+    javaInstallInFlight = null
+  }
+}
+
+function uniqueByRelativePath(items) {
+  const map = new Map()
+  for (const item of items) {
+    if (!item?.destinationPath) continue
+    map.set(item.destinationPath, item)
+  }
+  return [...map.values()]
+}
+
+function buildLibraryDownloadEntries(settings, libraries) {
+  const items = []
+
+  for (const library of libraries || []) {
+    if (!library || typeof library !== 'object' || !shouldApplyRules(library.rules)) {
+      continue
+    }
+
+    const artifactPath = String(library?.downloads?.artifact?.path || '').trim()
+    const artifactUrl = String(library?.downloads?.artifact?.url || '').trim()
+    const relativePath = artifactPath
+      ? artifactPath.replace(/[\\/]+/g, path.sep)
+      : resolveLibraryRelativePath(library)
+
+    if (!relativePath) {
+      continue
+    }
+
+    let url = artifactUrl
+    if (!url) {
+      const baseUrl = String(library?.url || 'https://libraries.minecraft.net/').replace(/\/+$/, '')
+      url = `${baseUrl}/${relativePath.replace(/\\/g, '/')}`
+    }
+
+    items.push({
+      destinationPath: resolveSharedDirectory(settings, path.join('libraries', relativePath)),
+      url
+    })
+  }
+
+  return uniqueByRelativePath(items)
+}
+
+function buildAssetDownloadEntries(settings, assetIndexPayload) {
+  return Object.values(assetIndexPayload?.objects || {}).map((entry) => {
+    const hash = String(entry?.hash || '').trim()
+    const prefix = hash.slice(0, 2)
+    return {
+      destinationPath: resolveSharedDirectory(settings, path.join('assets', 'objects', prefix, hash)),
+      url: `https://resources.download.minecraft.net/${prefix}/${hash}`
+    }
+  }).filter((entry) => entry.destinationPath && entry.url)
+}
+
+async function ensureDownloadEntries(entries, label) {
+  const missingEntries = entries.filter((entry) => entry?.destinationPath && entry?.url && !fs.existsSync(entry.destinationPath))
+  if (!missingEntries.length) {
+    return
+  }
+
+  let completed = 0
+  await runWithConcurrency(missingEntries, RUNTIME_DOWNLOAD_CONCURRENCY, async (entry) => {
+    completed += 1
+    setLaunchStatus(`${label} ${completed}/${missingEntries.length}`)
+    await downloadRemoteFile(entry.url, entry.destinationPath)
+  })
+}
+
+async function ensureManagedClientRuntime(settings, versionName, manifest) {
+  const minecraftVersion = String(manifest?.minecraftVersion || versionName || '').trim()
+  const sharedFabricVersion = getSharedFabricVersionDirectoryName(manifest)
+  if (!minecraftVersion || !sharedFabricVersion) {
+    throw new Error('Не удалось определить Minecraft или Fabric runtime для этой версии.')
+  }
+
+  setLaunchStatus('Проверяю метаданные Minecraft...')
+  const baseProfile = await resolveMinecraftVersionPayload(minecraftVersion)
+  const rawFabricProfile = await resolveFabricProfilePayload(manifest)
+  const fabricProfile = {
+    ...rawFabricProfile,
+    id: sharedFabricVersion,
+    inheritsFrom: minecraftVersion
+  }
+
+  if (!manifest.javaVersion && baseProfile?.javaVersion?.majorVersion) {
+    manifest.javaVersion = Math.max(0, Number(baseProfile.javaVersion.majorVersion) || 0)
+  }
+
+  const baseVersionJsonPath = getSharedVersionJsonPath(settings, minecraftVersion)
+  if (!fs.existsSync(baseVersionJsonPath)) {
+    await fsp.mkdir(path.dirname(baseVersionJsonPath), { recursive: true })
+    await fsp.writeFile(baseVersionJsonPath, JSON.stringify(baseProfile, null, 2), 'utf8')
+  }
+
+  const fabricVersionJsonPath = getSharedVersionJsonPath(settings, sharedFabricVersion)
+  if (!fs.existsSync(fabricVersionJsonPath)) {
+    await fsp.mkdir(path.dirname(fabricVersionJsonPath), { recursive: true })
+    await fsp.writeFile(fabricVersionJsonPath, JSON.stringify(fabricProfile, null, 2), 'utf8')
+  }
+
+  const clientJarPath = getSharedVersionJarPath(settings, minecraftVersion)
+  if (!fs.existsSync(clientJarPath)) {
+    setLaunchStatus('Скачиваю Minecraft client 1/1')
+    await downloadRemoteFile(String(baseProfile?.downloads?.client?.url || '').trim(), clientJarPath)
+  }
+
+  const libraries = mergeLibraries(baseProfile.libraries, fabricProfile.libraries)
+  await ensureDownloadEntries(buildLibraryDownloadEntries(settings, libraries), 'Скачиваю libraries')
+
+  const assetIndexId = String(baseProfile?.assetIndex?.id || baseProfile?.assets || '').trim()
+  const assetIndexUrl = String(baseProfile?.assetIndex?.url || '').trim()
+  if (!assetIndexId || !assetIndexUrl) {
+    throw new Error('Не удалось определить asset index для клиента.')
+  }
+
+  const assetIndexPath = resolveSharedDirectory(settings, path.join('assets', 'indexes', `${assetIndexId}.json`))
+  let assetIndexPayload = null
+  if (fs.existsSync(assetIndexPath)) {
+    assetIndexPayload = await readJsonFile(assetIndexPath)
+  } else {
+    setLaunchStatus('Скачиваю asset index...')
+    assetIndexPayload = await fetchJson(assetIndexUrl)
+    await fsp.mkdir(path.dirname(assetIndexPath), { recursive: true })
+    await fsp.writeFile(assetIndexPath, JSON.stringify(assetIndexPayload, null, 2), 'utf8')
+  }
+
+  const logConfigId = String(baseProfile?.logging?.client?.file?.id || '').trim()
+  const logConfigUrl = String(baseProfile?.logging?.client?.file?.url || '').trim()
+  if (logConfigId && logConfigUrl) {
+    const logConfigPath = resolveSharedDirectory(settings, path.join('assets', 'log_configs', logConfigId))
+    if (!fs.existsSync(logConfigPath)) {
+      setLaunchStatus('Скачиваю log config...')
+      await downloadRemoteFile(logConfigUrl, logConfigPath)
+    }
+  }
+
+  await ensureDownloadEntries(buildAssetDownloadEntries(settings, assetIndexPayload), 'Скачиваю assets')
+
+  return {
+    baseProfile,
+    fabricProfile
+  }
 }
 
 async function extractNativeJar(nativeJarPath, nativesDir) {
@@ -2453,6 +3060,7 @@ async function buildManagedClientLaunchPlan(settings, versionName, installDir, p
   }
 
   setLaunchStatus('Проверяю версии Minecraft и Fabric...')
+  await ensureManagedClientRuntime(settings, versionName, manifest)
   const baseVersionJsonPath = getSharedVersionJsonPath(settings, baseVersionId)
   const fabricVersionJsonPath = getSharedVersionJsonPath(settings, managedFabricVersionId)
   const clientJarPath = getSharedVersionJarPath(settings, baseVersionId)
@@ -2579,7 +3187,7 @@ async function buildManagedClientLaunchPlan(settings, versionName, installDir, p
   ]
 
   setLaunchStatus('Проверяю Java runtime...')
-  const javaExecutable = await resolveJavaExecutable(settings)
+  const javaExecutable = await resolveJavaExecutable(settings, versionName, manifest)
   assertLaunchNotCancelled()
 
   return {
@@ -3227,12 +3835,67 @@ async function extractZipWithProgress(zipPath, installDir) {
   })
 }
 
+async function extractZipArchive(zipPath, destinationDir) {
+  const zipFile = await openZipFile(zipPath)
+
+  return new Promise((resolve, reject) => {
+    const fail = (error) => {
+      try {
+        if (typeof zipFile.close === 'function') {
+          zipFile.close()
+        }
+      } catch {}
+
+      reject(error)
+    }
+
+    zipFile.on('entry', (entry) => {
+      handleEntry(entry).catch(fail)
+    })
+
+    zipFile.on('end', resolve)
+    zipFile.on('error', fail)
+    zipFile.readEntry()
+
+    async function handleEntry(entry) {
+      const destinationPath = resolveArchiveEntryPath(destinationDir, entry.fileName)
+
+      if (entry.fileName.endsWith('/')) {
+        await fsp.mkdir(destinationPath, { recursive: true })
+        zipFile.readEntry()
+        return
+      }
+
+      await fsp.mkdir(path.dirname(destinationPath), { recursive: true })
+      const readStream = await openZipEntryStream(zipFile, entry)
+      await pipeStreamToFile(readStream, destinationPath)
+      zipFile.readEntry()
+    }
+  })
+}
+
 async function downloadToFile(downloadUrl, outputPath, options = {}) {
   const versionName = String(options.versionName || '').trim()
   let received = Math.max(0, Number(options.resumeFrom) || 0)
   let total = Math.max(0, Number(options.total) || 0)
   let append = received > 0 && fs.existsSync(outputPath)
   const headers = {}
+
+  if (append && total > 0 && received >= total) {
+    let remoteTotal = 0
+
+    try {
+      const headResponse = await fetchWithRetry(downloadUrl, { method: 'HEAD' })
+      remoteTotal = Math.max(0, Number(headResponse.headers.get('content-length')) || 0)
+    } catch {}
+
+    if (!(remoteTotal > 0 && remoteTotal === received)) {
+      append = false
+      received = 0
+      total = 0
+      await fsp.rm(outputPath, { force: true })
+    }
+  }
 
   if (append && total > 0 && received >= total) {
     const controller = getInstallController()
@@ -3264,7 +3927,14 @@ async function downloadToFile(downloadUrl, outputPath, options = {}) {
     headers.Range = `bytes=${received}-`
   }
 
-  const response = await fetch(downloadUrl, { headers })
+  let response = await fetchWithRetry(downloadUrl, { headers })
+  if (append && response.status === 416) {
+    append = false
+    received = 0
+    total = 0
+    await fsp.rm(outputPath, { force: true })
+    response = await fetchWithRetry(downloadUrl)
+  }
   if (!response.ok || !response.body) {
     throw new Error(`Ошибка загрузки: ${response.status}`)
   }
@@ -3285,6 +3955,7 @@ async function downloadToFile(downloadUrl, outputPath, options = {}) {
   await fsp.mkdir(path.dirname(outputPath), { recursive: true })
   const stream = fs.createWriteStream(outputPath, { flags: append ? 'a' : 'w' })
   const controller = getInstallController()
+  let lastPersistedAt = 0
 
   controller.resumeState = {
     versionName,
@@ -3304,6 +3975,25 @@ async function downloadToFile(downloadUrl, outputPath, options = {}) {
     ...controller.resumeState,
     paused: controller.paused
   })
+
+  async function persistResumeState(force = false) {
+    if (!controller.resumeState) {
+      return
+    }
+
+    const now = Date.now()
+    if (!force && now - lastPersistedAt < 800) {
+      return
+    }
+
+    lastPersistedAt = now
+    controller.resumeState = {
+      ...controller.resumeState,
+      paused: controller.paused,
+      updatedAt: new Date(now).toISOString()
+    }
+    await saveInstallResumeState(controller.resumeState)
+  }
 
   setInstallProgress({
     stage: 'download',
@@ -3327,6 +4017,7 @@ async function downloadToFile(downloadUrl, outputPath, options = {}) {
       current: received,
       total
     })
+    await persistResumeState()
   }
 
   await new Promise((resolve, reject) => {
@@ -3349,6 +4040,7 @@ async function downloadToFile(downloadUrl, outputPath, options = {}) {
     paused: false,
     updatedAt: new Date().toISOString()
   }
+  await persistResumeState(true)
 }
 
 async function installVersion(versionName) {
@@ -3406,11 +4098,13 @@ async function installVersion(versionName) {
       installSourcePath = tempFile
     }
 
+    const normalizedSourcePath = String(installSourcePath || '').toLowerCase()
     const extension = path.extname(installSourcePath).toLowerCase()
+    const isZipSource = extension === '.zip' || normalizedSourcePath.endsWith('.zip.part')
 
     if (source.kind === 'local' && source.isDirectory) {
       await copyDirectorySourceToInstallDir(installSourcePath, installDir)
-    } else if (extension === '.zip') {
+    } else if (isZipSource) {
       setInstallStatus(`Установка ${version.versionName}`)
       await extractZipWithProgress(installSourcePath, installDir)
     } else {
@@ -3465,7 +4159,13 @@ async function installVersion(versionName) {
   } finally {
     installInFlight = false
     const controller = getInstallController()
-    const keepPartialDownload = Boolean(controller.paused && controller.resumeState?.stage === 'download')
+    const keepPartialDownload = Boolean(
+      !controller.cancelled
+      && controller.resumeState?.stage === 'download'
+      && controller.resumeState?.tempFile
+      && fs.existsSync(controller.resumeState.tempFile)
+      && controller.resumeState.current > 0
+    )
     if (!keepPartialDownload) {
       controller.resumeState = null
       await clearInstallResumeState()
@@ -3498,6 +4198,28 @@ function buildJavaArgs(settings, versionName, installDir, launchableFile) {
   }
 
   return args
+}
+
+async function startLaunchableFileProcess(settings, version, installDir, launchableFile) {
+  const extension = path.extname(launchableFile).toLowerCase()
+  const spawnOptions = {
+    cwd: path.dirname(launchableFile),
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true
+  }
+
+  if (extension === '.jar') {
+    const manifest = await loadClientManifest(installDir, version.versionName)
+    const javaExecutable = await resolveJavaExecutable(settings, version.versionName, manifest)
+    return spawn(javaExecutable, [...buildJavaArgs(settings, version.versionName, installDir, launchableFile), '-jar', launchableFile], spawnOptions)
+  }
+
+  if (extension === '.exe') {
+    return spawn(launchableFile, [], spawnOptions)
+  }
+
+  throw new Error('Поддерживаются только .jar и .exe launch-файлы.')
 }
 
 async function launchVersion(versionName) {
@@ -3589,24 +4311,9 @@ async function launchVersionFlow(versionName) {
       throw new Error('Р¤Р°Р№Р» РґР»СЏ Р·Р°РїСѓСЃРєР° РЅРµ РЅР°Р№РґРµРЅ РІ РїР°РїРєРµ РІРµСЂСЃРёРё')
     }
 
-    const extension = path.extname(launchableFile).toLowerCase()
-    let child = null
-    assertLaunchNotCancelled()
-    setLaunchStatus('Р—Р°РїСѓСЃРєР°СЋ Minecraft...')
-    if (extension === '.jar') {
-      child = spawn('javaw', [...buildJavaArgs(settings, version.versionName, installDir, launchableFile), '-jar', launchableFile], {
-        cwd: path.dirname(launchableFile),
-        detached: true,
-        stdio: 'ignore'
-      })
-    } else {
-      child = spawn(launchableFile, [], {
-        cwd: path.dirname(launchableFile),
-        detached: true,
-        stdio: 'ignore',
-        shell: extension === '.cmd' || extension === '.bat'
-      })
-    }
+  assertLaunchNotCancelled()
+  setLaunchStatus('Р—Р°РїСѓСЃРєР°СЋ Minecraft...')
+  const child = await startLaunchableFileProcess(settings, version, installDir, launchableFile)
 
     child.royaleVersionName = version.versionName
     child.royaleInstallDir = installDir
@@ -3658,24 +4365,9 @@ async function launchVersionTask(versionName) {
       throw new Error(launchFileMissingMessage)
     }
 
-    const extension = path.extname(launchableFile).toLowerCase()
-    let child = null
     assertLaunchNotCancelled()
     setLaunchStatus(launchingStatus)
-    if (extension === '.jar') {
-      child = spawn('javaw', [...buildJavaArgs(settings, version.versionName, installDir, launchableFile), '-jar', launchableFile], {
-        cwd: path.dirname(launchableFile),
-        detached: true,
-        stdio: 'ignore'
-      })
-    } else {
-      child = spawn(launchableFile, [], {
-        cwd: path.dirname(launchableFile),
-        detached: true,
-        stdio: 'ignore',
-        shell: extension === '.cmd' || extension === '.bat'
-      })
-    }
+    const child = await startLaunchableFileProcess(settings, version, installDir, launchableFile)
 
     child.royaleVersionName = version.versionName
     child.royaleInstallDir = installDir
@@ -3691,6 +4383,14 @@ async function launchVersionTask(versionName) {
     })
     throw error
   }
+}
+
+async function launchVersion(versionName) {
+  return launchVersionTask(versionName)
+}
+
+async function launchVersionFlow(versionName) {
+  return launchVersionTask(versionName)
 }
 
 function parseCliArgs() {
@@ -4062,6 +4762,13 @@ ipcMain.handle('shell:open-external', async (_event, targetUrl) => {
 })
 ipcMain.handle('stats:get-dashboard', async (_event, versionName) => getStatsDashboard(versionName))
 ipcMain.handle('version:get-state', async (_event, versionName) => getVersionState(versionName))
+ipcMain.handle('java:get-status', async (_event, versionName) => getJavaStatusForVersion(versionName))
+ipcMain.handle('java:install', async (_event, versionName) => {
+  const settings = await loadSettings()
+  const installDir = resolveVersionDirectory(settings, versionName)
+  const manifest = await loadClientManifest(installDir, versionName)
+  return installJavaRuntime(settings, versionName, manifest)
+})
 ipcMain.handle('version:install', async (_event, versionName) => installVersion(versionName))
 ipcMain.handle('version:pause-install', async (_event, paused) => pauseInstallFlow(paused))
 ipcMain.handle('version:cancel-install', async () => {

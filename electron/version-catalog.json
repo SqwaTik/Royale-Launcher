@@ -4,34 +4,39 @@
     "channel": "Основная сборка",
     "title": "Royale Master",
     "source": "https://github.com/SqwaTik/Royale-Launcher-Versions/releases/latest/download/1.21.11.zip",
-    "notes": "Клиент Royale Master для Minecraft 1.21.11 с отдельной установкой и прямым запуском."
+    "notes": "Клиент Royale Master для Minecraft 1.21.11 с отдельной установкой и прямым запуском.",
+    "javaVersion": 21
   },
   {
     "versionName": "26.1",
     "channel": "Скоро",
     "title": "Версия готовится",
     "source": "",
-    "notes": "Эта версия появится позже."
+    "notes": "Эта версия появится позже.",
+    "javaVersion": 21
   },
   {
     "versionName": "1.21.4",
     "channel": "Скоро",
     "title": "Версия готовится",
     "source": "",
-    "notes": "Эта версия появится позже."
+    "notes": "Эта версия появится позже.",
+    "javaVersion": 21
   },
   {
     "versionName": "1.16.5",
     "channel": "Скоро",
     "title": "Версия готовится",
     "source": "",
-    "notes": "Эта версия появится позже."
+    "notes": "Эта версия появится позже.",
+    "javaVersion": 8
   },
   {
     "versionName": "1.12.2",
     "channel": "Скоро",
     "title": "Версия готовится",
     "source": "",
-    "notes": "Эта версия появится позже."
+    "notes": "Эта версия появится позже.",
+    "javaVersion": 8
   }
 ]
