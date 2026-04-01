@@ -8,13 +8,24 @@
   "icon": "Grass",
   "managedMods": [
     {
-      "fileName": "royale-1.0.07.jar",
+      "fileName": "royale-1.0.08.jar",
       "source": {
         "type": "github-release-asset",
         "owner": "SqwaTik",
         "repo": "Royale-Launcher-Versions",
         "release": "v1.21.11",
-        "asset": "royale-1.0.07.jar",
+        "asset": "royale-1.0.08.jar",
+        "tokenEnv": "ROYALE_GITHUB_TOKEN"
+      }
+    },
+    {
+      "fileName": "viafabricplus-4.4.8.jar",
+      "source": {
+        "type": "github-release-asset",
+        "owner": "SqwaTik",
+        "repo": "Royale-Launcher-Versions",
+        "release": "v1.21.11",
+        "asset": "viafabricplus-4.4.8.jar",
         "tokenEnv": "ROYALE_GITHUB_TOKEN"
       }
     },
