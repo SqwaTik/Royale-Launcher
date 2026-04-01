@@ -3,7 +3,14 @@
     "versionName": "1.21.11",
     "channel": "Основная сборка",
     "title": "Royale Master",
-    "source": "https://github.com/SqwaTik/Royale-Launcher-Versions/releases/latest/download/1.21.11.zip",
+    "source": {
+      "type": "github-release-asset",
+      "owner": "SqwaTik",
+      "repo": "Royale-Launcher-Versions",
+      "release": "latest",
+      "asset": "1.21.11.zip",
+      "tokenEnv": "ROYALE_GITHUB_TOKEN"
+    },
     "notes": "Клиент Royale Master для Minecraft 1.21.11 с отдельной установкой и прямым запуском.",
     "javaVersion": 21
   },

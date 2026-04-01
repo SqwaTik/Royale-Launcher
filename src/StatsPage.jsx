@@ -1,4 +1,4 @@
-import { memo, useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 
 const EMPTY_GAMEPLAY = {
   available: false,
@@ -130,6 +130,40 @@ function formatDateTime(value) {
   }
 }
 
+function formatRuntimeStatus(stats) {
+  const runtime = stats?.runtime || {}
+  if (!stats?.available || !runtime.isInWorld) {
+    return 'Не в игре'
+  }
+  return runtime.statusLabel || 'В игре'
+}
+
+function formatRuntimeServer(stats) {
+  const runtime = stats?.runtime || {}
+  if (!stats?.available || !runtime.isInWorld) {
+    return 'Не в игре'
+  }
+  const serverName = String(runtime.serverName || '').trim()
+  const serverAddress = String(runtime.serverAddress || '').trim()
+  if (!serverName && !serverAddress) {
+    return 'Локальный мир'
+  }
+  if (/^vanilla$/i.test(serverName)) {
+    return 'Локальный мир'
+  }
+  return serverName || serverAddress || UNKNOWN_LABEL
+}
+
+function formatRuntimeWorld(stats) {
+  const runtime = stats?.runtime || {}
+  if (!stats?.available || !runtime.isInWorld) {
+    return 'Не в игре'
+  }
+  const value = String(runtime.worldType || '').trim()
+  if (!value) return UNKNOWN_LABEL
+  return /^vanilla$/i.test(value) ? 'Обычный мир' : value
+}
+
 function formatPercent(value, total) {
   const safeValue = Math.max(0, Number(value) || 0)
   if (safeValue <= 0) return 0
@@ -151,9 +185,9 @@ function getGameplayRows(stats) {
 
 function getDetailedRows(stats) {
   return [
-    { label: 'Статус', value: stats.runtime.statusLabel || UNKNOWN_LABEL },
-    { label: 'Сервер', value: stats.runtime.serverName || stats.runtime.serverAddress || UNKNOWN_LABEL },
-    { label: 'Мир', value: stats.runtime.worldType || UNKNOWN_LABEL },
+    { label: 'Статус', value: formatRuntimeStatus(stats) },
+    { label: 'Сервер', value: formatRuntimeServer(stats) },
+    { label: 'Мир', value: formatRuntimeWorld(stats) },
     { label: 'Сессий', value: String(stats.totals.sessions || 0) },
     { label: 'Входов в PvP', value: String(stats.totals.combatEntries || 0) },
     { label: 'Полный runtime', value: formatExactDuration(stats.totals.runtimeMs) },
@@ -196,49 +230,41 @@ const StatsMetricCard = memo(function StatsMetricCard({
   title,
   hint,
   interactive = false,
-  onContextMenu = null,
-  actionLabel = '',
-  onAction = null
+  onClick = null,
+  onContextMenu = null
 }) {
+  function handleKeyDown(event) {
+    if (!interactive) return
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    onClick?.(event)
+  }
+
   return (
     <article
       className={`stats-card stats-card--metric stats-card--${tone} ${interactive ? 'is-interactive' : ''}`}
-      onContextMenu={interactive ? onContextMenu : undefined}
       role={interactive ? 'button' : undefined}
       tabIndex={interactive ? 0 : undefined}
-      onKeyDown={interactive ? (event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault()
-          onAction?.(event)
-        }
-      } : undefined}
+      onClick={interactive ? onClick : undefined}
+      onKeyDown={interactive ? handleKeyDown : undefined}
+      onContextMenu={interactive ? onContextMenu : undefined}
     >
       <span className="stats-card__label">{label}</span>
       <strong className="stats-card__value">{value}</strong>
       <span className="stats-card__title">{title}</span>
       <span className="stats-card__hint">{hint}</span>
-      {actionLabel && onAction ? (
-        <button
-          type="button"
-          className="stats-card__action"
-          onClick={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-            onAction(event)
-          }}
-        >
-          {actionLabel}
-        </button>
-      ) : null}
     </article>
   )
 })
 
 const StatsPage = memo(function StatsPage({ api, selectedVersion, hasUpdateBanner = false }) {
+  const pageRef = useRef(null)
+  const chartPanelRef = useRef(null)
   const [dashboard, setDashboard] = useState(EMPTY_DASHBOARD)
   const [loading, setLoading] = useState(true)
   const [popover, setPopover] = useState(null)
   const [chartReady, setChartReady] = useState(false)
+  const [chartVisible, setChartVisible] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -277,7 +303,7 @@ const StatsPage = memo(function StatsPage({ api, selectedVersion, hasUpdateBanne
 
     function refreshOnFocus() {
       if (document.hidden) return
-      if (Date.now() - lastLoadedAt < 30000) return
+      if (Date.now() - lastLoadedAt < 180000) return
       void loadDashboard()
     }
 
@@ -304,6 +330,35 @@ const StatsPage = memo(function StatsPage({ api, selectedVersion, hasUpdateBanne
   }, [dashboard.timeline, selectedVersion])
 
   useEffect(() => {
+    const rootNode = pageRef.current
+    const targetNode = chartPanelRef.current
+
+    if (!targetNode) {
+      setChartVisible(false)
+      return
+    }
+
+    if (typeof window.IntersectionObserver !== 'function') {
+      setChartVisible(true)
+      return
+    }
+
+    const observer = new window.IntersectionObserver((entries) => {
+      const entry = entries[0]
+      if (entry?.isIntersecting) {
+        setChartVisible(true)
+      }
+    }, {
+      root: rootNode,
+      rootMargin: '140px 0px',
+      threshold: 0.04
+    })
+
+    observer.observe(targetNode)
+    return () => observer.disconnect()
+  }, [selectedVersion, dashboard.generatedAt])
+
+  useEffect(() => {
     function closePopover() {
       setPopover(null)
     }
@@ -327,6 +382,28 @@ const StatsPage = memo(function StatsPage({ api, selectedVersion, hasUpdateBanne
     }
   }, [])
 
+  useEffect(() => {
+    const pageNode = pageRef.current
+    if (!popover || !pageNode) {
+      return
+    }
+
+    const previousOverflow = pageNode.style.overflowY
+    const preventScroll = (event) => {
+      event.preventDefault()
+    }
+
+    pageNode.style.overflowY = 'hidden'
+    pageNode.addEventListener('wheel', preventScroll, { passive: false })
+    pageNode.addEventListener('touchmove', preventScroll, { passive: false })
+
+    return () => {
+      pageNode.style.overflowY = previousOverflow
+      pageNode.removeEventListener('wheel', preventScroll)
+      pageNode.removeEventListener('touchmove', preventScroll)
+    }
+  }, [popover])
+
   const deferredDashboard = useDeferredValue(dashboard)
   const gameplay = deferredDashboard.gameplay || EMPTY_GAMEPLAY
   const statusRows = useMemo(() => getGameplayRows(gameplay), [gameplay])
@@ -338,26 +415,19 @@ const StatsPage = memo(function StatsPage({ api, selectedVersion, hasUpdateBanne
     [timeline]
   )
   const favoriteVersion = deferredDashboard.highlights.favoriteVersion || null
-  const hasRuntimeDetails = Boolean(gameplay.available && gameplay.runtime.statusLabel)
 
   function openDetails(event) {
     event.preventDefault()
     event.stopPropagation()
-    setPopover({
-      x: Math.min(event.clientX, window.innerWidth - 360),
-      y: Math.min(event.clientY, window.innerHeight - 320)
-    })
+    setPopover({ open: true })
   }
 
-  function openDetailsFromButton() {
-    setPopover({
-      x: Math.min(Math.round(window.innerWidth * 0.5) - 180, window.innerWidth - 360),
-      y: Math.min(Math.round(window.innerHeight * 0.28), window.innerHeight - 320)
-    })
-  }
 
   return (
-    <section className={`stats-page page-surface ${hasUpdateBanner ? 'has-update-banner' : ''}`}>
+    <section
+      ref={pageRef}
+      className={`stats-page page-surface ${hasUpdateBanner ? 'has-update-banner' : ''} ${popover ? 'is-modal-open' : ''}`}
+    >
       <div className="stats-page__header">
         <span className="eyebrow">Royale Launcher</span>
         <h1>Статистика</h1>
@@ -375,11 +445,10 @@ const StatsPage = memo(function StatsPage({ api, selectedVersion, hasUpdateBanne
           label="Наиграно"
           value={formatDuration(gameplay.totals.playtimeMs)}
           title="Общее время в мире"
-          hint={gameplay.available ? 'ПКМ или кнопка ниже для детальной разбивки' : 'Появится после первого запуска клиента'}
+          hint={gameplay.available ? 'Нажмите для детальной разбивки' : 'Появится после первого запуска клиента'}
           interactive={gameplay.available}
+          onClick={openDetails}
           onContextMenu={openDetails}
-          actionLabel={gameplay.available ? 'Подробнее' : ''}
-          onAction={gameplay.available ? openDetailsFromButton : null}
         />
         <StatsMetricCard
           tone="green"
@@ -413,13 +482,8 @@ const StatsPage = memo(function StatsPage({ api, selectedVersion, hasUpdateBanne
             </div>
             <div className="stats-panel__actions">
               <span className="stats-panel__meta">
-                {gameplay.runtime.statusLabel || UNKNOWN_LABEL}
+                {formatRuntimeStatus(gameplay)}
               </span>
-              {gameplay.available ? (
-                <button type="button" className="stats-panel__action" onClick={openDetailsFromButton}>
-                  Подробнее
-                </button>
-              ) : null}
             </div>
           </div>
 
@@ -444,15 +508,15 @@ const StatsPage = memo(function StatsPage({ api, selectedVersion, hasUpdateBanne
             <div className="stats-feed__item stats-feed__item--compact">
               <div className="stats-feed__head">
                 <strong>Сейчас</strong>
-                <span>{hasRuntimeDetails ? (gameplay.runtime.isInWorld ? 'В игре' : 'Не в мире') : UNKNOWN_LABEL}</span>
+                <span>{formatRuntimeStatus(gameplay)}</span>
               </div>
               <div className="stats-feed__body">
-                <p>Сервер: {gameplay.runtime.serverName || gameplay.runtime.serverAddress || UNKNOWN_LABEL}</p>
-                <p>Режим: {gameplay.runtime.worldType || UNKNOWN_LABEL}</p>
+                <p>Сервер: {formatRuntimeServer(gameplay)}</p>
+                <p>Режим: {formatRuntimeWorld(gameplay)}</p>
                 <p>
-                  AFK: {hasRuntimeDetails ? (gameplay.runtime.isAfk ? 'Да' : 'Нет') : UNKNOWN_LABEL}
+                  AFK: {gameplay.runtime.isInWorld ? (gameplay.runtime.isAfk ? 'Да' : 'Нет') : 'Нет'}
                   {' · '}
-                  PvP: {hasRuntimeDetails ? (gameplay.runtime.isInPvp ? 'Да' : 'Нет') : UNKNOWN_LABEL}
+                  PvP: {gameplay.runtime.isInWorld ? (gameplay.runtime.isInPvp ? 'Да' : 'Нет') : 'Нет'}
                 </p>
               </div>
             </div>
@@ -513,7 +577,7 @@ const StatsPage = memo(function StatsPage({ api, selectedVersion, hasUpdateBanne
           </div>
         </article>
 
-        <article className="stats-panel stats-panel--wide">
+        <article ref={chartPanelRef} className="stats-panel stats-panel--wide stats-panel--deferred">
           <div className="stats-panel__head">
             <div>
               <span className="section-label">График</span>
@@ -522,7 +586,7 @@ const StatsPage = memo(function StatsPage({ api, selectedVersion, hasUpdateBanne
             <span className="stats-panel__meta">Последние 7 дней</span>
           </div>
 
-          {chartReady && timeline.length > 0 ? (
+          {chartReady && chartVisible && timeline.length > 0 ? (
             <div className="stats-chart stats-chart--compact">
               <div className="stats-chart__bars stats-chart__bars--timeline stats-chart__bars--compact">
                 {timeline.map((entry) => {
@@ -547,7 +611,7 @@ const StatsPage = memo(function StatsPage({ api, selectedVersion, hasUpdateBanne
                 <span><i className="stats-legend__swatch stats-legend__swatch--session" /> Игровые сессии</span>
               </div>
             </div>
-          ) : chartReady ? (
+          ) : chartReady && chartVisible ? (
             <p className="stats-empty">Unknown</p>
           ) : (
             <div className="stats-chart-placeholder" aria-hidden="true" />
@@ -556,24 +620,25 @@ const StatsPage = memo(function StatsPage({ api, selectedVersion, hasUpdateBanne
       </div>
 
       {popover ? (
-        <div
-          className="stats-context"
-          role="dialog"
-          aria-modal="false"
-          style={{ left: `${popover.x}px`, top: `${popover.y}px` }}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <div className="stats-context__head">
-            <strong>Подробнее</strong>
-            <span>Игровая сессия Royale Master</span>
-          </div>
-          <div className="stats-context__grid">
-            {detailRows.map((row) => (
-              <div key={row.label} className="stats-context__row">
-                <span>{row.label}</span>
-                <strong>{row.value}</strong>
-              </div>
-            ))}
+        <div className="stats-context-backdrop" role="presentation" onClick={() => setPopover(null)}>
+          <div
+            className="stats-context"
+            role="dialog"
+            aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="stats-context__head">
+              <strong>Подробнее</strong>
+              <span>Игровая сессия Royale Master</span>
+            </div>
+            <div className="stats-context__grid">
+              {detailRows.map((row) => (
+                <div key={row.label} className="stats-context__row">
+                  <span>{row.label}</span>
+                  <strong>{row.value}</strong>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       ) : null}

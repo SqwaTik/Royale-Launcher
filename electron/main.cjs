@@ -57,6 +57,24 @@ app.commandLine.appendSwitch('metrics-recording-only')
 app.commandLine.appendSwitch('no-default-browser-check')
 app.commandLine.appendSwitch('no-first-run')
 
+const shouldBypassSingleInstanceLock = process.argv.some((arg) => String(arg || '').startsWith('--smoke-test='))
+const hasSingleInstanceLock = shouldBypassSingleInstanceLock ? true : app.requestSingleInstanceLock()
+
+if (!hasSingleInstanceLock) {
+  app.quit()
+}
+
+app.on('second-instance', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    showMainWindow()
+    return
+  }
+
+  if (app.isReady()) {
+    createWindow()
+  }
+})
+
 function getCryptoModule() {
   if (!cryptoModule) {
     cryptoModule = require('crypto')
@@ -77,8 +95,33 @@ function getDefaultInstallFolder() {
   return process.platform === 'win32' ? 'C:\\Royale' : path.join(os.homedir(), 'Royale')
 }
 
+const PLAYER_NAME_PATTERN = /^[A-Za-z0-9_]{1,16}$/
+
+function sanitizeMinecraftPlayerName(value) {
+  return String(value || '')
+    .trim()
+    .replace(/[^\w]/g, '')
+    .slice(0, 16)
+}
+
+function isValidMinecraftPlayerName(value) {
+  return PLAYER_NAME_PATTERN.test(String(value || '').trim())
+}
+
+function isTemporarySmokeInstallFolder(folder) {
+  const candidate = String(folder || '').trim()
+  if (!candidate) {
+    return false
+  }
+
+  const normalized = path.resolve(candidate).replace(/[\\/]+/g, '\\').toLowerCase()
+  const baseName = path.basename(normalized).toLowerCase()
+  return baseName.startsWith('royalesmoke') || normalized.includes('\\royale-launcher-smoke') || normalized.includes('\\royalesmoke')
+}
+
 const DEFAULT_SETTINGS = {
   installFolder: getDefaultInstallFolder(),
+  playerName: '',
   javaArgs: '',
   memoryMb: 4096,
   autoMemoryEnabled: true,
@@ -147,13 +190,13 @@ async function pauseInstallFlow(paused) {
   const controller = getInstallController()
   controller.paused = Boolean(paused)
 
-  if (controller.paused && controller.resumeState?.stage === 'download') {
+  if (controller.paused && controller.resumeState) {
     await saveInstallResumeState({
       ...controller.resumeState,
       paused: true,
       updatedAt: new Date().toISOString()
     })
-  } else if (!controller.paused && controller.resumeState?.stage === 'download') {
+  } else if (!controller.paused && controller.resumeState) {
     await saveInstallResumeState({
       ...controller.resumeState,
       paused: false,
@@ -213,7 +256,14 @@ const DEFAULT_VERSION_CATALOG = [
     versionName: '1.21.11',
     channel: 'Основная сборка',
     title: 'Royale Master',
-    source: 'https://github.com/SqwaTik/Royale-Launcher-Versions/releases/latest/download/1.21.11.zip',
+    source: {
+      type: 'github-release-asset',
+      owner: 'SqwaTik',
+      repo: 'Royale-Launcher-Versions',
+      release: 'latest',
+      asset: '1.21.11.zip',
+      tokenEnv: 'ROYALE_GITHUB_TOKEN'
+    },
     javaVersion: 21,
     notes: 'Клиент Royale Master для Minecraft 1.21.11 с отдельной установкой и прямым запуском.'
   },
@@ -943,7 +993,7 @@ async function getStatsDashboard(versionName = '') {
     const selectedVersion = settings.versions.find((entry) => entry.versionName === versionName)?.versionName || settings.lastSelectedVersion
     return {
       ...statsDashboardCache,
-      gameplay: await readGameplayStats(resolveVersionDirectory(settings, selectedVersion)),
+      gameplay: await readGameplayStats(selectedVersion, resolveVersionDirectory(settings, selectedVersion)),
       selectedVersion
     }
   }
@@ -954,7 +1004,7 @@ async function getStatsDashboard(versionName = '') {
   const [storage, catalog, gameplay] = await Promise.all([
     loadStatsStorage(),
     loadVersionCatalog(),
-    readGameplayStats(resolveVersionDirectory(settings, selectedVersion))
+    readGameplayStats(selectedVersion, resolveVersionDirectory(settings, selectedVersion))
   ])
 
   const events = storage.events
@@ -1108,6 +1158,62 @@ function sanitizeVersionName(value) {
   return cleaned.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_') || 'default'
 }
 
+function normalizeSourceDefinition(input) {
+  if (typeof input === 'string') {
+    return String(input || '').trim()
+  }
+
+  if (!input || typeof input !== 'object') {
+    return ''
+  }
+
+  const payload = input
+  const type = String(payload.type || payload.kind || '').trim().toLowerCase()
+
+  if (type === 'github-release-asset' || type === 'github_asset' || type === 'github-release') {
+    const owner = String(payload.owner || '').trim()
+    const repo = String(payload.repo || '').trim()
+    const asset = String(payload.asset || payload.assetName || '').trim()
+    if (!owner || !repo || !asset) {
+      return ''
+    }
+
+    return {
+      type: 'github-release-asset',
+      owner,
+      repo,
+      release: String(payload.release || payload.tag || 'latest').trim() || 'latest',
+      asset,
+      tokenEnv: String(payload.tokenEnv || payload.authEnv || '').trim()
+    }
+  }
+
+  if (typeof payload.url === 'string' || typeof payload.path === 'string') {
+    return String(payload.url || payload.path || '').trim()
+  }
+
+  return ''
+}
+
+function normalizeManagedModDefinitions(input) {
+  const items = Array.isArray(input) ? input : []
+
+  return items
+    .map((item) => {
+      const fileName = path.basename(String(item?.fileName || item?.name || item?.asset || '').trim())
+      const source = normalizeSourceDefinition(item?.source ?? item?.url ?? '')
+      if (!fileName || !source) {
+        return null
+      }
+
+      return {
+        fileName,
+        source
+      }
+    })
+    .filter(Boolean)
+}
+
 function normalizeCatalog(input) {
   const items = Array.isArray(input) ? input : DEFAULT_VERSION_CATALOG
 
@@ -1116,7 +1222,7 @@ function normalizeCatalog(input) {
       versionName: sanitizeVersionName(item?.versionName),
       channel: String(item?.channel ?? '').trim() || 'Каталог',
       title: String(item?.title ?? '').trim() || 'Royale Build',
-      source: String(item?.source ?? '').trim(),
+      source: normalizeSourceDefinition(item?.source),
       notes: String(item?.notes ?? '').trim(),
       javaVersion: Math.max(0, Number(item?.javaVersion) || 0)
     }))
@@ -1128,6 +1234,7 @@ function normalizeCatalog(input) {
 
 function normalizeSettings(input) {
   const payload = input && typeof input === 'object' ? input : {}
+  const requestedInstallFolder = String(payload.installFolder || DEFAULT_SETTINGS.installFolder).trim() || DEFAULT_SETTINGS.installFolder
   const skipJavaPromptVersions = Array.isArray(payload.skipJavaPromptVersions)
     ? payload.skipJavaPromptVersions
       .map((item) => Math.max(0, Number(item) || 0))
@@ -1136,7 +1243,8 @@ function normalizeSettings(input) {
     : DEFAULT_SETTINGS.skipJavaPromptVersions
 
   return {
-    installFolder: String(payload.installFolder || DEFAULT_SETTINGS.installFolder).trim() || DEFAULT_SETTINGS.installFolder,
+    installFolder: isTemporarySmokeInstallFolder(requestedInstallFolder) ? DEFAULT_SETTINGS.installFolder : requestedInstallFolder,
+    playerName: sanitizeMinecraftPlayerName(payload.playerName || ''),
     javaArgs: String(payload.javaArgs ?? payload.launchCommand ?? '').trim(),
     memoryMb: Math.max(1024, Number(payload.memoryMb) || DEFAULT_SETTINGS.memoryMb),
     autoMemoryEnabled: payload.autoMemoryEnabled !== false,
@@ -1201,7 +1309,11 @@ async function loadSettings() {
     loadVersionCatalog()
   ])
 
-  settingsCache = mergeSettingsWithCatalog(normalizeSettings(JSON.parse(rawSettings)), catalog)
+  const parsedSettings = JSON.parse(rawSettings)
+  settingsCache = mergeSettingsWithCatalog(normalizeSettings(parsedSettings), catalog)
+  if (isTemporarySmokeInstallFolder(parsedSettings?.installFolder)) {
+    await saveSettings(settingsCache)
+  }
   return settingsCache
 }
 
@@ -1211,6 +1323,7 @@ async function saveSettings(nextSettings) {
   const normalized = mergeSettingsWithCatalog(normalizeSettings(nextSettings), catalog)
   const payload = {
     installFolder: normalized.installFolder,
+    playerName: normalized.playerName,
     javaArgs: normalized.javaArgs,
     memoryMb: normalized.memoryMb,
     autoMemoryEnabled: normalized.autoMemoryEnabled,
@@ -1400,7 +1513,8 @@ function normalizeClientManifest(input, versionName) {
     fabricLoaderVersion,
     javaVersion,
     gameDir: normalizeRelativeGamePath(payload.gameDir ?? fallback?.gameDir ?? '.'),
-    icon: String(payload.icon || fallback?.icon || '').trim()
+    icon: String(payload.icon || fallback?.icon || '').trim(),
+    managedMods: normalizeManagedModDefinitions(payload.managedMods ?? fallback?.managedMods)
   }
 }
 
@@ -1413,6 +1527,94 @@ async function loadClientManifest(installDir, versionName) {
   } catch {
     return getDefaultClientManifest(versionName)
   }
+}
+
+function getManifestManagedMods(manifest) {
+  return normalizeManagedModDefinitions(manifest?.managedMods)
+}
+
+async function ensureManagedModsFromManifest(manifest, gameDir, options = {}) {
+  const entries = getManifestManagedMods(manifest)
+  if (entries.length === 0) {
+    return normalizeManagedRuntimeVisibility(gameDir)
+  }
+
+  const installStage = options.stage === 'install'
+  const downloadMissing = options.downloadMissing !== false
+  const reportProgress = (label, progressPayload = {}) => {
+    const message = String(label || '').trim()
+    if (!message) {
+      return
+    }
+
+    if (installStage) {
+      setInstallStatus(message)
+      setInstallProgress({
+        stage: 'prepare',
+        label: message,
+        progress: Math.max(0, Math.min(1, Number(progressPayload.progress) || 0)),
+        current: Math.max(0, Number(progressPayload.current) || 0),
+        total: Math.max(0, Number(progressPayload.total) || 0)
+      })
+      return
+    }
+
+    setLaunchStatus(message)
+  }
+  const beforeRead = installStage
+    ? async () => {
+      await waitForInstallResumeIfNeeded()
+      assertInstallNotCancelled()
+    }
+    : async () => {
+      assertLaunchNotCancelled()
+    }
+
+  const managedModsDir = resolveManagedRuntimeModsDir(gameDir)
+  const managedRuntimeRoot = resolveManagedRuntimeRoot(gameDir)
+  await fsp.mkdir(managedModsDir, { recursive: true })
+  unmarkPathHiddenOnWindows(managedRuntimeRoot)
+  unmarkPathHiddenOnWindows(managedModsDir)
+
+  const resolvedFiles = []
+  let completed = 0
+  for (const entry of entries) {
+    const targetPath = path.join(managedModsDir, entry.fileName)
+    if (!fs.existsSync(targetPath)) {
+      if (!downloadMissing) {
+        throw new Error(`Не найден managed-мод ${entry.fileName}. Переустановите клиент и попробуйте снова.`)
+      }
+
+      const source = resolveSourceDescriptor(entry.source)
+      if (source.kind === 'none') {
+        throw new Error(`Для managed-мода ${entry.fileName} не настроен источник.`)
+      }
+
+      if (source.kind === 'local') {
+        if (!source.exists) {
+          throw new Error(`Не найден локальный managed-мод: ${source.value}`)
+        }
+        await fsp.copyFile(source.value, targetPath)
+      } else {
+        const request = await resolveSourceDownloadRequest(source)
+        await downloadRemoteFile(request.url, targetPath, {
+          requestOptions: request.requestOptions,
+          beforeRead
+        })
+      }
+    }
+
+    completed += 1
+    reportProgress(`Подготавливаю managed-моды ${completed}/${entries.length}`, {
+      current: completed,
+      total: entries.length,
+      progress: entries.length > 0 ? completed / entries.length : 1
+    })
+    resolvedFiles.push(targetPath)
+  }
+
+  await normalizeManagedRuntimeVisibility(gameDir)
+  return resolvedFiles
 }
 
 async function ensureSharedMinecraftLayout(settings) {
@@ -1730,6 +1932,26 @@ async function inspectInstalledClient(installDir, versionName) {
       resolveManagedRuntimeModsDir(gameDir),
       ...getLegacyManagedRuntimeRoots(gameDir).map((rootDir) => path.join(rootDir, 'mods'))
     ]
+    const requiredManagedMods = getManifestManagedMods(manifest)
+    if (requiredManagedMods.length > 0) {
+      const requiredPaths = await Promise.all(requiredManagedMods.map(async (entry) => {
+        for (const managedModsDir of managedModsDirCandidates) {
+          const candidate = path.join(managedModsDir, entry.fileName)
+          if (fs.existsSync(candidate)) {
+            return candidate
+          }
+        }
+
+        const gameDirCandidate = path.join(modsDir, entry.fileName)
+        return fs.existsSync(gameDirCandidate) ? gameDirCandidate : ''
+      }))
+
+      return {
+        installed: requiredPaths.every(Boolean),
+        launchableFile: requiredPaths.find(Boolean) || ''
+      }
+    }
+
     let royaleJar = ''
     let fabricApiJar = ''
 
@@ -1811,14 +2033,42 @@ function resolveLocalSourceCandidates(source) {
   return [...new Set(candidates)]
 }
 
+function buildGitHubReleaseAssetResumeKey(source) {
+  const release = String(source?.release || 'latest').trim() || 'latest'
+  return `github-release-asset:${source.owner}/${source.repo}:${release}:${source.asset}`
+}
+
+function getSourceDescriptorResumeKey(sourceDescriptor) {
+  return String(sourceDescriptor?.resumeKey || sourceDescriptor?.value || '').trim()
+}
+
 function resolveSourceDescriptor(source) {
+  if (source && typeof source === 'object') {
+    const type = String(source.type || '').trim().toLowerCase()
+    if (type === 'github-release-asset') {
+      const owner = String(source.owner || '').trim()
+      const repo = String(source.repo || '').trim()
+      const asset = String(source.asset || '').trim()
+      if (!owner || !repo || !asset) {
+        return { kind: 'none', value: '' }
+      }
+
+      const normalizedSource = normalizeSourceDefinition(source)
+      return {
+        kind: 'github-release-asset',
+        value: normalizedSource,
+        resumeKey: buildGitHubReleaseAssetResumeKey(normalizedSource)
+      }
+    }
+  }
+
   const value = String(source ?? '').trim()
   if (!value) {
     return { kind: 'none', value: '' }
   }
 
   if (isRemoteSource(value)) {
-    return { kind: 'remote', value }
+    return { kind: 'remote', value, resumeKey: value }
   }
 
   const candidates = resolveLocalSourceCandidates(value)
@@ -1828,7 +2078,115 @@ function resolveSourceDescriptor(source) {
     kind: 'local',
     value: localMatch || candidates[0] || value,
     exists: Boolean(localMatch),
-    isDirectory: Boolean(localStats?.isDirectory())
+    isDirectory: Boolean(localStats?.isDirectory()),
+    resumeKey: localMatch || candidates[0] || value
+  }
+}
+
+function resolveGitHubSourceToken(source) {
+  const tokenEnv = String(source?.tokenEnv || '').trim()
+  const candidates = [
+    tokenEnv ? process.env[tokenEnv] : '',
+    process.env.ROYALE_GITHUB_TOKEN,
+    process.env.GITHUB_TOKEN
+  ]
+
+  return candidates
+    .map((item) => String(item || '').trim())
+    .find(Boolean) || ''
+}
+
+function buildGitHubApiHeaders(token, accept = 'application/vnd.github+json') {
+  const headers = {
+    Accept: accept,
+    'X-GitHub-Api-Version': '2022-11-28'
+  }
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+
+  return headers
+}
+
+async function resolveGithubReleaseAssetRequest(source) {
+  const token = resolveGitHubSourceToken(source)
+  const releaseName = String(source.release || 'latest').trim() || 'latest'
+  const releaseEndpoint = releaseName.toLowerCase() === 'latest'
+    ? `https://api.github.com/repos/${source.owner}/${source.repo}/releases/latest`
+    : `https://api.github.com/repos/${source.owner}/${source.repo}/releases/tags/${encodeURIComponent(releaseName)}`
+
+  const releaseResponse = await fetchWithRetry(releaseEndpoint, {
+    headers: buildGitHubApiHeaders(token)
+  })
+
+  if (!releaseResponse.ok) {
+    if ([401, 403, 404].includes(releaseResponse.status) && !token) {
+      throw new Error(`Для защищённого источника ${source.owner}/${source.repo} нужен GitHub token. Укажите переменную окружения ${source.tokenEnv || 'ROYALE_GITHUB_TOKEN'} и попробуйте снова.`)
+    }
+
+    throw new Error(`Не удалось получить release ${source.owner}/${source.repo}: ${releaseResponse.status}`)
+  }
+
+  const releasePayload = await releaseResponse.json()
+  const assets = Array.isArray(releasePayload?.assets) ? releasePayload.assets : []
+  const matchedAsset = assets.find((entry) => String(entry?.name || '').trim().toLowerCase() === source.asset.toLowerCase())
+  if (!matchedAsset) {
+    throw new Error(`В release ${source.owner}/${source.repo} не найден asset ${source.asset}.`)
+  }
+
+  const browserDownloadUrl = String(matchedAsset.browser_download_url || '').trim()
+  const assetApiUrl = String(matchedAsset.url || '').trim()
+  if (token && assetApiUrl) {
+    return {
+      url: assetApiUrl,
+      fileName: source.asset,
+      requestOptions: {
+        headers: buildGitHubApiHeaders(token, 'application/octet-stream')
+      }
+    }
+  }
+
+  return {
+    url: browserDownloadUrl || assetApiUrl,
+    fileName: source.asset,
+    requestOptions: token
+      ? {
+          headers: buildGitHubApiHeaders(token)
+        }
+      : {}
+  }
+}
+
+async function resolveSourceDownloadRequest(sourceDescriptor) {
+  if (!sourceDescriptor || sourceDescriptor.kind === 'none') {
+    return { kind: 'none', fileName: '', url: '', requestOptions: {} }
+  }
+
+  if (sourceDescriptor.kind === 'remote') {
+    return {
+      kind: 'remote',
+      fileName: guessFileName(sourceDescriptor.value),
+      url: sourceDescriptor.value,
+      requestOptions: {}
+    }
+  }
+
+  if (sourceDescriptor.kind === 'github-release-asset') {
+    const request = await resolveGithubReleaseAssetRequest(sourceDescriptor.value)
+    return {
+      kind: sourceDescriptor.kind,
+      fileName: request.fileName || guessFileName(request.url),
+      url: request.url,
+      requestOptions: request.requestOptions || {}
+    }
+  }
+
+  return {
+    kind: sourceDescriptor.kind,
+    fileName: guessFileName(sourceDescriptor.value),
+    url: '',
+    requestOptions: {}
   }
 }
 
@@ -1836,11 +2194,11 @@ async function getVersionStateFromSettings(settings, versionName) {
   const version = settings.versions.find((entry) => entry.versionName === versionName) || settings.versions[0]
   const installDir = resolveVersionDirectory(settings, version.versionName)
   const installedClient = await inspectInstalledClient(installDir, version.versionName)
-  const gameplayStats = await readGameplayStats(installDir)
+  const gameplayStats = await readGameplayStats(version.versionName, installDir)
   const source = resolveSourceDescriptor(version.source)
   const runningClient = await getActiveRunningClientState()
-  const pendingInstall = source.kind === 'remote'
-    ? await getResumableInstallState(version.versionName, source.value)
+  const pendingInstall = source.kind === 'remote' || source.kind === 'github-release-asset'
+    ? await getResumableInstallState(version.versionName, getSourceDescriptorResumeKey(source))
     : null
   const running = Boolean(runningClient && runningClient.versionName.toLowerCase() === version.versionName.toLowerCase())
 
@@ -1848,7 +2206,7 @@ async function getVersionStateFromSettings(settings, versionName) {
     installDir,
     installed: installedClient.installed,
     launchableFile: installedClient.launchableFile,
-    hasSource: source.kind === 'remote' || source.exists,
+    hasSource: source.kind === 'remote' || source.kind === 'github-release-asset' || source.exists,
     sourceKind: source.kind,
     title: version.title,
     channel: version.channel,
@@ -2198,28 +2556,39 @@ function getGameplayStatsPath(installDir) {
   return path.join(installDir, 'Royale', 'stats', 'launcher-game-stats.json')
 }
 
-async function readGameplayStats(installDir) {
+function getGameplayStatsCachePath(versionName = '') {
+  const safeVersionName = sanitizeVersionName(versionName || 'global')
+  return path.join(app.getPath('userData'), 'gameplay-stats', `${safeVersionName}.json`)
+}
+
+async function persistGameplayStatsCache(versionName, payload) {
+  const cachePath = getGameplayStatsCachePath(versionName)
+  await fsp.mkdir(path.dirname(cachePath), { recursive: true })
+  await fsp.writeFile(cachePath, JSON.stringify(payload, null, 2), 'utf8')
+}
+
+async function readGameplayStats(versionName, installDir) {
   if (!installDir) {
     return createGameplayStatsSnapshot()
   }
 
   const statsPath = getGameplayStatsPath(installDir)
+  const cachePath = getGameplayStatsCachePath(versionName)
   try {
     await fsp.access(statsPath)
-  } catch {
-    return {
-      ...createGameplayStatsSnapshot(),
-      filePath: statsPath
-    }
-  }
-
-  try {
     const value = await readJsonFile(statsPath)
+    await persistGameplayStatsCache(versionName, value).catch(() => {})
     return normalizeGameplayStats(value, statsPath)
   } catch {
-    return {
-      ...createGameplayStatsSnapshot(),
-      filePath: statsPath
+    try {
+      await fsp.access(cachePath)
+      const cachedValue = await readJsonFile(cachePath)
+      return normalizeGameplayStats(cachedValue, cachePath)
+    } catch {
+      return {
+        ...createGameplayStatsSnapshot(),
+        filePath: statsPath
+      }
     }
   }
 }
@@ -2485,7 +2854,15 @@ async function downloadRemoteFile(url, destinationPath, options = {}) {
   const total = Math.max(0, Number(response.headers.get('content-length')) || 0)
   let current = 0
 
+  await options.beforeRead?.()
+  options.onProgress?.({
+    current,
+    total,
+    progress: total > 0 ? current / total : 0
+  })
+
   while (true) {
+    await options.beforeRead?.()
     const { done, value } = await reader.read()
     if (done) break
     output.write(Buffer.from(value))
@@ -2835,29 +3212,105 @@ function buildAssetDownloadEntries(settings, assetIndexPayload) {
 }
 
 async function ensureDownloadEntries(entries, label) {
+  return ensureDownloadEntriesWithOptions(entries, label)
+}
+
+async function ensureDownloadEntriesWithOptions(entries, label, options = {}) {
   const missingEntries = entries.filter((entry) => entry?.destinationPath && entry?.url && !fs.existsSync(entry.destinationPath))
   if (!missingEntries.length) {
     return
   }
 
+  const safeLabel = String(label || '').trim()
+  const report = typeof options.report === 'function'
+    ? options.report
+    : (message) => {
+      setLaunchStatus(message)
+    }
+
+  report(`${safeLabel} 0/${missingEntries.length}`, {
+    current: 0,
+    total: missingEntries.length,
+    progress: 0
+  })
+
   let completed = 0
   await runWithConcurrency(missingEntries, RUNTIME_DOWNLOAD_CONCURRENCY, async (entry) => {
+    await downloadRemoteFile(entry.url, entry.destinationPath, {
+      beforeRead: options.beforeRead
+    })
     completed += 1
-    setLaunchStatus(`${label} ${completed}/${missingEntries.length}`)
-    await downloadRemoteFile(entry.url, entry.destinationPath)
+    report(`${safeLabel} ${completed}/${missingEntries.length}`, {
+      current: completed,
+      total: missingEntries.length,
+      progress: missingEntries.length > 0 ? completed / missingEntries.length : 1
+    })
   })
 }
 
-async function ensureManagedClientRuntime(settings, versionName, manifest) {
+async function ensureManagedClientRuntime(settings, versionName, manifest, options = {}) {
+  const installStage = options.stage === 'install'
+  const downloadMissing = options.downloadMissing !== false
+  const reportProgress = (label, progressPayload = {}) => {
+    const message = String(label || '').trim()
+    if (installStage) {
+      setInstallStatus(message)
+      setInstallProgress({
+        stage: 'prepare',
+        label: message,
+        progress: Math.max(0, Math.min(1, Number(progressPayload.progress) || 0)),
+        current: Math.max(0, Number(progressPayload.current) || 0),
+        total: Math.max(0, Number(progressPayload.total) || 0)
+      })
+      return
+    }
+
+    setLaunchStatus(message)
+  }
+  const beforeRead = installStage
+    ? async () => {
+      await waitForInstallResumeIfNeeded()
+      assertInstallNotCancelled()
+    }
+    : async () => {
+      assertLaunchNotCancelled()
+    }
   const minecraftVersion = String(manifest?.minecraftVersion || versionName || '').trim()
   const sharedFabricVersion = getSharedFabricVersionDirectoryName(manifest)
   if (!minecraftVersion || !sharedFabricVersion) {
     throw new Error('Не удалось определить Minecraft или Fabric runtime для этой версии.')
   }
 
-  setLaunchStatus('Проверяю метаданные Minecraft...')
-  const baseProfile = await resolveMinecraftVersionPayload(minecraftVersion)
-  const rawFabricProfile = await resolveFabricProfilePayload(manifest)
+  const baseVersionJsonPath = getSharedVersionJsonPath(settings, minecraftVersion)
+  const fabricVersionJsonPath = getSharedVersionJsonPath(settings, sharedFabricVersion)
+
+  let baseProfile = fs.existsSync(baseVersionJsonPath)
+    ? await readJsonFile(baseVersionJsonPath)
+    : null
+
+  if (!baseProfile) {
+    if (!downloadMissing) {
+      throw new Error('Не найдены метаданные Minecraft. Переустановите клиент и попробуйте снова.')
+    }
+
+    reportProgress('Проверяю метаданные Minecraft...')
+    baseProfile = await resolveMinecraftVersionPayload(minecraftVersion)
+    await fsp.mkdir(path.dirname(baseVersionJsonPath), { recursive: true })
+    await fsp.writeFile(baseVersionJsonPath, JSON.stringify(baseProfile, null, 2), 'utf8')
+  }
+
+  let rawFabricProfile = fs.existsSync(fabricVersionJsonPath)
+    ? await readJsonFile(fabricVersionJsonPath)
+    : null
+
+  if (!rawFabricProfile) {
+    if (!downloadMissing) {
+      throw new Error('Не найден профиль Fabric. Переустановите клиент и попробуйте снова.')
+    }
+
+    reportProgress('Проверяю профиль Fabric...')
+    rawFabricProfile = await resolveFabricProfilePayload(manifest)
+  }
   const fabricProfile = {
     ...rawFabricProfile,
     id: sharedFabricVersion,
@@ -2868,13 +3321,6 @@ async function ensureManagedClientRuntime(settings, versionName, manifest) {
     manifest.javaVersion = Math.max(0, Number(baseProfile.javaVersion.majorVersion) || 0)
   }
 
-  const baseVersionJsonPath = getSharedVersionJsonPath(settings, minecraftVersion)
-  if (!fs.existsSync(baseVersionJsonPath)) {
-    await fsp.mkdir(path.dirname(baseVersionJsonPath), { recursive: true })
-    await fsp.writeFile(baseVersionJsonPath, JSON.stringify(baseProfile, null, 2), 'utf8')
-  }
-
-  const fabricVersionJsonPath = getSharedVersionJsonPath(settings, sharedFabricVersion)
   if (!fs.existsSync(fabricVersionJsonPath)) {
     await fsp.mkdir(path.dirname(fabricVersionJsonPath), { recursive: true })
     await fsp.writeFile(fabricVersionJsonPath, JSON.stringify(fabricProfile, null, 2), 'utf8')
@@ -2882,12 +3328,27 @@ async function ensureManagedClientRuntime(settings, versionName, manifest) {
 
   const clientJarPath = getSharedVersionJarPath(settings, minecraftVersion)
   if (!fs.existsSync(clientJarPath)) {
-    setLaunchStatus('Скачиваю Minecraft client 1/1')
-    await downloadRemoteFile(String(baseProfile?.downloads?.client?.url || '').trim(), clientJarPath)
+    if (!downloadMissing) {
+      throw new Error('Не найден Minecraft client jar. Переустановите клиент и попробуйте снова.')
+    }
+
+    const clientUrl = String(baseProfile?.downloads?.client?.url || '').trim()
+    if (!clientUrl) {
+      throw new Error('Не удалось определить ссылку на Minecraft client.')
+    }
+
+    reportProgress('Скачиваю Minecraft client 0/1', { current: 0, total: 1, progress: 0 })
+    await downloadRemoteFile(clientUrl, clientJarPath, { beforeRead })
+    reportProgress('Скачиваю Minecraft client 1/1', { current: 1, total: 1, progress: 1 })
   }
 
   const libraries = mergeLibraries(baseProfile.libraries, fabricProfile.libraries)
-  await ensureDownloadEntries(buildLibraryDownloadEntries(settings, libraries), 'Скачиваю libraries')
+  if (downloadMissing) {
+    await ensureDownloadEntriesWithOptions(buildLibraryDownloadEntries(settings, libraries), 'Скачиваю libraries', {
+      beforeRead,
+      report: reportProgress
+    })
+  }
 
   const assetIndexId = String(baseProfile?.assetIndex?.id || baseProfile?.assets || '').trim()
   const assetIndexUrl = String(baseProfile?.assetIndex?.url || '').trim()
@@ -2900,10 +3361,15 @@ async function ensureManagedClientRuntime(settings, versionName, manifest) {
   if (fs.existsSync(assetIndexPath)) {
     assetIndexPayload = await readJsonFile(assetIndexPath)
   } else {
-    setLaunchStatus('Скачиваю asset index...')
+    if (!downloadMissing) {
+      throw new Error('Не найден asset index клиента. Переустановите клиент и попробуйте снова.')
+    }
+
+    reportProgress('Скачиваю asset index 0/1', { current: 0, total: 1, progress: 0 })
     assetIndexPayload = await fetchJson(assetIndexUrl)
     await fsp.mkdir(path.dirname(assetIndexPath), { recursive: true })
     await fsp.writeFile(assetIndexPath, JSON.stringify(assetIndexPayload, null, 2), 'utf8')
+    reportProgress('Скачиваю asset index 1/1', { current: 1, total: 1, progress: 1 })
   }
 
   const logConfigId = String(baseProfile?.logging?.client?.file?.id || '').trim()
@@ -2911,12 +3377,22 @@ async function ensureManagedClientRuntime(settings, versionName, manifest) {
   if (logConfigId && logConfigUrl) {
     const logConfigPath = resolveSharedDirectory(settings, path.join('assets', 'log_configs', logConfigId))
     if (!fs.existsSync(logConfigPath)) {
-      setLaunchStatus('Скачиваю log config...')
-      await downloadRemoteFile(logConfigUrl, logConfigPath)
+      if (!downloadMissing) {
+        throw new Error('Не найден log config клиента. Переустановите клиент и попробуйте снова.')
+      }
+
+      reportProgress('Скачиваю log config 0/1', { current: 0, total: 1, progress: 0 })
+      await downloadRemoteFile(logConfigUrl, logConfigPath, { beforeRead })
+      reportProgress('Скачиваю log config 1/1', { current: 1, total: 1, progress: 1 })
     }
   }
 
-  await ensureDownloadEntries(buildAssetDownloadEntries(settings, assetIndexPayload), 'Скачиваю assets')
+  if (downloadMissing) {
+    await ensureDownloadEntriesWithOptions(buildAssetDownloadEntries(settings, assetIndexPayload), 'Скачиваю assets', {
+      beforeRead,
+      report: reportProgress
+    })
+  }
 
   return {
     baseProfile,
@@ -3018,9 +3494,14 @@ async function ensurePreparedNatives(nativeLibraryPaths, nativesDir, runtimeRoot
   await writeNativeCacheKey(nativesDir, cacheKey)
 }
 
-function getLaunchPlayerName() {
+function getLaunchPlayerName(settings) {
+  const preferred = String(settings?.playerName || '').trim()
+  if (isValidMinecraftPlayerName(preferred)) {
+    return preferred
+  }
+
   const candidate = String(process.env.MINECRAFT_USERNAME || process.env.USERNAME || process.env.USER || 'RoyalePlayer').trim()
-  const sanitized = candidate.replace(/[^\w.-]/g, '').slice(0, 16)
+  const sanitized = sanitizeMinecraftPlayerName(candidate)
   return sanitized || 'RoyalePlayer'
 }
 
@@ -3061,7 +3542,7 @@ async function buildManagedClientLaunchPlan(settings, versionName, installDir, p
   }
 
   setLaunchStatus('Проверяю версии Minecraft и Fabric...')
-  await ensureManagedClientRuntime(settings, versionName, manifest)
+  await ensureManagedClientRuntime(settings, versionName, manifest, { downloadMissing: false })
   const baseVersionJsonPath = getSharedVersionJsonPath(settings, baseVersionId)
   const fabricVersionJsonPath = getSharedVersionJsonPath(settings, managedFabricVersionId)
   const clientJarPath = getSharedVersionJarPath(settings, baseVersionId)
@@ -3123,7 +3604,7 @@ async function buildManagedClientLaunchPlan(settings, versionName, installDir, p
   }
   const logConfigId = String(baseProfile.logging?.client?.file?.id || '').trim()
   const logConfigPath = logConfigId ? path.join(assetsRoot, 'log_configs', logConfigId) : ''
-  const playerName = getLaunchPlayerName()
+  const playerName = getLaunchPlayerName(settings)
   const offlineUuid = createOfflineUuid(playerName)
 
   const replacements = {
@@ -3171,7 +3652,7 @@ async function buildManagedClientLaunchPlan(settings, versionName, installDir, p
   jvmArgs.push(...collectLaunchArguments(fabricProfile.arguments?.jvm, replacements, featureFlags))
 
   setLaunchStatus('Проверяю managed-моды...')
-  const managedModFiles = await normalizeManagedRuntimeVisibility(gameDir)
+  const managedModFiles = await ensureManagedModsFromManifest(manifest, gameDir, { downloadMissing: false })
   assertLaunchNotCancelled()
   if (managedModFiles.length > 0 && !jvmArgs.some((item) => /^-Dfabric\.addMods=/i.test(item))) {
     jvmArgs.push(`-Dfabric.addMods=${managedModFiles.join(path.delimiter)}`)
@@ -3538,6 +4019,9 @@ async function prepareClientProfile(settings, versionName, installDir) {
     return null
   }
 
+  await ensureManagedClientRuntime(settings, versionName, preparedClient.manifest, { stage: 'install' })
+  await ensureManagedModsFromManifest(preparedClient.manifest, preparedClient.gameDir, { stage: 'install' })
+  await fsp.writeFile(getClientManifestPath(installDir), JSON.stringify(preparedClient.manifest, null, 2), 'utf8')
   await syncSharedRuntimeToMinecraftHome(settings, preparedClient.manifest)
   const versionId = await ensureFabricVersionProfile(settings, preparedClient.manifest)
   await updateMinecraftLauncherProfile(settings, versionName, installDir, preparedClient.manifest, versionId)
@@ -3628,16 +4112,24 @@ function setInstallProgress(payload) {
   }
 
   const controller = getInstallController()
-  if (controller.resumeState && progressPayload.stage === 'download') {
-    controller.resumeState = {
-      ...controller.resumeState,
-      stage: 'download',
-      progress: progressPayload.progress,
-      current: progressPayload.current,
-      total: progressPayload.total,
-      label: progressPayload.label || controller.resumeState.label || '',
-      paused: controller.paused
-    }
+  if (controller.resumeState) {
+    controller.resumeState = progressPayload.stage === 'download'
+      ? {
+        ...controller.resumeState,
+        stage: progressPayload.stage,
+        progress: progressPayload.progress,
+        current: progressPayload.current,
+        total: progressPayload.total,
+        label: progressPayload.label || controller.resumeState.label || '',
+        paused: controller.paused
+      }
+      : {
+        ...controller.resumeState,
+        stage: progressPayload.stage,
+        progress: progressPayload.progress,
+        label: progressPayload.label || controller.resumeState.label || '',
+        paused: controller.paused
+      }
   }
 
   emit('install:progress', progressPayload)
@@ -3877,16 +4369,25 @@ async function extractZipArchive(zipPath, destinationDir) {
 
 async function downloadToFile(downloadUrl, outputPath, options = {}) {
   const versionName = String(options.versionName || '').trim()
+  const sourceKey = String(options.sourceKey || downloadUrl || '').trim()
+  const baseRequestOptions = options.requestOptions && typeof options.requestOptions === 'object'
+    ? options.requestOptions
+    : {}
   let received = Math.max(0, Number(options.resumeFrom) || 0)
   let total = Math.max(0, Number(options.total) || 0)
   let append = received > 0 && fs.existsSync(outputPath)
-  const headers = {}
+  const headers = {
+    ...(baseRequestOptions.headers || {})
+  }
 
   if (append && total > 0 && received >= total) {
     let remoteTotal = 0
 
     try {
-      const headResponse = await fetchWithRetry(downloadUrl, { method: 'HEAD' })
+      const headResponse = await fetchWithRetry(downloadUrl, {
+        ...baseRequestOptions,
+        method: 'HEAD'
+      })
       remoteTotal = Math.max(0, Number(headResponse.headers.get('content-length')) || 0)
     } catch {}
 
@@ -3902,7 +4403,7 @@ async function downloadToFile(downloadUrl, outputPath, options = {}) {
     const controller = getInstallController()
     controller.resumeState = {
       versionName,
-      sourceUrl: downloadUrl,
+      sourceUrl: sourceKey,
       tempFile: outputPath,
       stage: 'download',
       paused: controller.paused,
@@ -3928,13 +4429,19 @@ async function downloadToFile(downloadUrl, outputPath, options = {}) {
     headers.Range = `bytes=${received}-`
   }
 
-  let response = await fetchWithRetry(downloadUrl, { headers })
+  let response = await fetchWithRetry(downloadUrl, {
+    ...baseRequestOptions,
+    headers
+  })
   if (append && response.status === 416) {
     append = false
     received = 0
     total = 0
     await fsp.rm(outputPath, { force: true })
-    response = await fetchWithRetry(downloadUrl)
+    response = await fetchWithRetry(downloadUrl, {
+      ...baseRequestOptions,
+      headers: baseRequestOptions.headers || {}
+    })
   }
   if (!response.ok || !response.body) {
     throw new Error(`Ошибка загрузки: ${response.status}`)
@@ -3960,7 +4467,7 @@ async function downloadToFile(downloadUrl, outputPath, options = {}) {
 
   controller.resumeState = {
     versionName,
-    sourceUrl: downloadUrl,
+    sourceUrl: sourceKey,
     tempFile: outputPath,
     stage: 'download',
     paused: controller.paused,
@@ -4084,14 +4591,17 @@ async function installVersion(versionName) {
 
     let installSourcePath = source.value
 
-    if (source.kind === 'remote') {
-      const fileName = guessFileName(source.value, version.versionName)
+    if (source.kind === 'remote' || source.kind === 'github-release-asset') {
+      const sourceRequest = await resolveSourceDownloadRequest(source)
+      const fileName = guessFileName(sourceRequest.fileName || sourceRequest.url, version.versionName)
       const extension = path.extname(fileName).toLowerCase() || '.zip'
-      const resumeState = await getResumableInstallState(version.versionName, source.value)
+      const resumeState = await getResumableInstallState(version.versionName, getSourceDescriptorResumeKey(source))
       tempFile = resumeState?.tempFile || getInstallResumeTempFile(version.versionName, extension)
       setInstallStatus(`Загрузка ${version.versionName}`)
-      await downloadToFile(source.value, tempFile, {
+      await downloadToFile(sourceRequest.url, tempFile, {
         versionName: version.versionName,
+        sourceKey: getSourceDescriptorResumeKey(source),
+        requestOptions: sourceRequest.requestOptions,
         resumeFrom: resumeState?.current || 0,
         total: resumeState?.total || 0
       })
@@ -4127,16 +4637,14 @@ async function installVersion(versionName) {
     }
     assertInstallNotCancelled()
 
-    try {
-      await prepareClientProfile(settings, version.versionName, installDir)
-    } catch {}
+    await prepareClientProfile(settings, version.versionName, installDir)
 
     const installedClient = await inspectInstalledClient(installDir, version.versionName)
     const installedState = {
       installDir,
       installed: installedClient.installed,
       launchableFile: installedClient.launchableFile,
-      hasSource: source.kind === 'remote' || source.exists,
+      hasSource: source.kind === 'remote' || source.kind === 'github-release-asset' || source.exists,
       sourceKind: source.kind,
       title: version.title,
       channel: version.channel,
@@ -4426,6 +4934,7 @@ async function withTemporarySettingsOverride(override, task) {
     } else {
       await fsp.rm(settingsPath, { force: true })
     }
+    settingsCache = null
   }
 }
 
@@ -4613,7 +5122,6 @@ function trackLaunchedProcess(child, settings) {
 function createWindow() {
   const cli = parseCliArgs()
   const windowIcon = getWindowIcon()
-  const windowIconPath = getWindowIconPath()
   const delayInitialShow = Boolean(cli.screenshotPath)
 
   mainWindow = new BrowserWindow({
@@ -4624,7 +5132,7 @@ function createWindow() {
     frame: false,
     show: !delayInitialShow,
     backgroundColor: '#07090d',
-    icon: process.platform === 'win32' ? (windowIconPath || windowIcon) : windowIcon,
+    icon: windowIcon,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,

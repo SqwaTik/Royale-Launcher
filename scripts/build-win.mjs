@@ -173,6 +173,7 @@ function syncShortcuts(executablePath) {
     '  $shortcut.IconLocation = "$exePath,0"',
     '  $shortcut.Save()',
     '}',
+    'ie4uinit.exe -ClearIconCache | Out-Null',
     'ie4uinit.exe -show | Out-Null'
   ].join('\n')
 
@@ -236,8 +237,8 @@ function syncBuildOutputs(currentMode) {
     try {
       mkdirSync(installedDir, { recursive: true })
       cpSync(unpackedDir, installedDir, { recursive: true, force: true })
+      patchWindowsExecutable(path.join(installedDir, 'Royale Launcher.exe'))
       cleanupLegacyInstall()
-      syncShortcuts(path.join(installedDir, 'Royale Launcher.exe'))
     } catch (error) {
       console.warn(`[build-win] Skipped installed copy sync: ${error.message}`)
     }

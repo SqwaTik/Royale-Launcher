@@ -5,5 +5,29 @@
   "fabricLoaderVersion": "0.18.4",
   "javaVersion": 21,
   "gameDir": ".",
-  "icon": "Grass"
+  "icon": "Grass",
+  "managedMods": [
+    {
+      "fileName": "royale-1.0.07.jar",
+      "source": {
+        "type": "github-release-asset",
+        "owner": "SqwaTik",
+        "repo": "Royale-Launcher-Versions",
+        "release": "v1.21.11",
+        "asset": "royale-1.0.07.jar",
+        "tokenEnv": "ROYALE_GITHUB_TOKEN"
+      }
+    },
+    {
+      "fileName": "fabric-api-0.141.2+1.21.11.jar",
+      "source": {
+        "type": "github-release-asset",
+        "owner": "SqwaTik",
+        "repo": "Royale-Launcher-Versions",
+        "release": "v1.21.11",
+        "asset": "fabric-api-0.141.2+1.21.11.jar",
+        "tokenEnv": "ROYALE_GITHUB_TOKEN"
+      }
+    }
+  ]
 }

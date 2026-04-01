@@ -1,4 +1,4 @@
-import { Suspense, lazy, memo, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, memo, startTransition, useEffect, useMemo, useRef, useState } from 'react'
 import { MINECRAFT_FACTS } from './minecraftFacts'
 
 const LazyStatsPage = lazy(() => import('./StatsPage'))
@@ -13,6 +13,7 @@ const VERSION_ART_IMAGES = {
 
 const DEFAULT_SETTINGS = {
   installFolder: 'C:\\Royale',
+  playerName: '',
   javaArgs: '',
   memoryMb: 4096,
   autoMemoryEnabled: true,
@@ -22,7 +23,7 @@ const DEFAULT_SETTINGS = {
   skipCancelConfirm: false,
   skipJavaPromptVersions: [],
   versions: [
-    { versionName: '1.21.11', channel: 'Основная сборка', title: 'Royale Master', source: 'https://github.com/SqwaTik/Royale-Launcher-Versions/releases/latest/download/1.21.11.zip', notes: 'Клиент Royale Master для Minecraft 1.21.11 с отдельной установкой и прямым запуском.' },
+    { versionName: '1.21.11', channel: 'Основная сборка', title: 'Royale Master', source: { type: 'github-release-asset', owner: 'SqwaTik', repo: 'Royale-Launcher-Versions', release: 'latest', asset: '1.21.11.zip', tokenEnv: 'ROYALE_GITHUB_TOKEN' }, notes: 'Клиент Royale Master для Minecraft 1.21.11 с отдельной установкой и прямым запуском.' },
     { versionName: '26.1', channel: 'Скоро', title: 'Версия готовится', source: '', notes: 'Эта версия появится позже.' },
     { versionName: '1.21.4', channel: 'Скоро', title: 'Версия готовится', source: '', notes: 'Эта версия появится позже.' },
     { versionName: '1.16.5', channel: 'Скоро', title: 'Версия готовится', source: '', notes: 'Эта версия появится позже.' },
@@ -42,6 +43,7 @@ const DEFAULT_PROGRESS = {
 }
 
 const UNKNOWN_LABEL = 'Unknown'
+const PLAYER_NAME_PATTERN = /^[A-Za-z0-9_]{1,16}$/
 
 const DEFAULT_GAMEPLAY_STATS = {
   available: false,
@@ -352,6 +354,15 @@ function CheckIcon() {
   )
 }
 
+function ToastStatusIcon({ tone }) {
+  const icon = tone === 'success' ? <CheckIcon /> : <CloseIcon />
+  return (
+    <span className={`toast__icon toast__icon--${tone}`} aria-hidden="true">
+      {icon}
+    </span>
+  )
+}
+
 const NavButton = memo(function NavButton({ active, label, onClick, children }) {
   return (
     <button className={`rail__nav ${active ? 'is-active' : ''}`} onClick={onClick}>
@@ -657,6 +668,42 @@ function formatExactDuration(milliseconds) {
   return parts.join(' ')
 }
 
+function isValidMinecraftPlayerName(value) {
+  return PLAYER_NAME_PATTERN.test(String(value || '').trim())
+}
+
+function normalizePlayerNameDraft(value) {
+  return String(value || '').slice(0, 16)
+}
+
+function sanitizePlayerNameInput(value) {
+  return String(value || '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 16)
+}
+
+function getRuntimeStatusLabel(stats) {
+  const runtime = stats?.runtime || {}
+  if (!stats?.available || !runtime.isInWorld) {
+    return 'Не в игре'
+  }
+  return runtime.statusLabel || 'В игре'
+}
+
+function getRuntimeServerLabel(stats) {
+  const runtime = stats?.runtime || {}
+  if (!stats?.available || !runtime.isInWorld) {
+    return 'Не в игре'
+  }
+  const serverName = String(runtime.serverName || '').trim()
+  const serverAddress = String(runtime.serverAddress || '').trim()
+  if (!serverName && !serverAddress) {
+    return 'Локальный мир'
+  }
+  if (/^vanilla$/i.test(serverName)) {
+    return 'Локальный мир'
+  }
+  return serverName || serverAddress || UNKNOWN_LABEL
+}
+
 function formatDateTime(value) {
   if (!value) return UNKNOWN_LABEL
   try {
@@ -670,22 +717,6 @@ function formatDateTime(value) {
   } catch {
     return UNKNOWN_LABEL
   }
-}
-
-function formatGameplayStatusLabel(stats) {
-  return stats?.runtime?.statusLabel || UNKNOWN_LABEL
-}
-
-function getGameplayStatusRows(stats) {
-  const durations = stats?.statusTotals || DEFAULT_GAMEPLAY_STATS.statusTotals
-  return [
-    { key: 'playing', label: 'В игре', value: formatDuration(durations.playing) },
-    { key: 'pvp', label: 'В PvP', value: formatDuration(durations.pvp) },
-    { key: 'afk', label: 'АФК', value: formatDuration(durations.afk) },
-    { key: 'pause', label: 'Пауза', value: formatDuration(durations.pause) },
-    { key: 'menu', label: 'Меню', value: formatDuration(durations.menu) },
-    { key: 'connecting', label: 'Подключение', value: formatDuration(durations.connecting) }
-  ]
 }
 
 function requestIdleTask(callback, timeout = 1) {
@@ -718,6 +749,20 @@ function getToastToneFromMessage(message) {
   return 'error'
 }
 
+function getToastTitle(tone, message = '') {
+  const normalizedMessage = String(message || '').trim()
+  if (tone === 'success' && normalizedMessage) {
+    if (/установлено/i.test(normalizedMessage)) return 'Установлено'
+    if (/java/i.test(normalizedMessage)) return 'Готово'
+    if (/настрой/i.test(normalizedMessage)) return 'Настройка применена'
+  }
+
+  if (tone === 'warning') return 'Внимание'
+  if (tone === 'error') return 'Ошибка'
+  if (tone === 'success') return 'Готово'
+  return 'Уведомление'
+}
+
 function App() {
   const api = window.royaleApi
   const autosaveReadyRef = useRef(false)
@@ -731,6 +776,8 @@ function App() {
   const toastTimerRef = useRef(null)
   const hiddenToastQueueRef = useRef([])
   const lastToastStampRef = useRef({ key: '', at: 0 })
+  const activeToastRef = useRef(null)
+  const heroBackdropTimeoutRef = useRef(null)
 
   const [page, setPage] = useState(initialPage)
   const [settings, setSettings] = useState(DEFAULT_SETTINGS)
@@ -755,32 +802,71 @@ function App() {
   const [showVersionArt, setShowVersionArt] = useState(false)
   const [activeToast, setActiveToast] = useState(null)
   const [heroFactIndex, setHeroFactIndex] = useState(0)
+  const [heroBackdrop, setHeroBackdrop] = useState({
+    currentImage: '',
+    currentPosition: 'center center',
+    previousImage: '',
+    previousPosition: 'center center',
+    token: 0
+  })
   const lowPerformanceMode = useMemo(() => detectLowPerformanceDevice(), [])
-  const deferredSelectedVersion = useDeferredValue(selectedVersion)
 
   const selectedProfile = useMemo(
     () => settings.versions.find((entry) => entry.versionName === selectedVersion) || settings.versions[0],
     [settings, selectedVersion]
   )
-  const selectedArt = VERSION_ART[deferredSelectedVersion] || VERSION_ART['1.21.11']
+  const selectedArt = VERSION_ART[selectedVersion] || VERSION_ART['1.21.11']
   const shouldPollVersionState = page === 'home' || versionState.running || showCloseLauncherPrompt
   const shellLiteMode = lowPerformanceMode || page === 'settings' || !showVersionArt
   const heroFact = MINECRAFT_FACTS[heroFactIndex % MINECRAFT_FACTS.length]
-  const gameplayStats = versionState.gameplayStats || DEFAULT_GAMEPLAY_STATS
   const hasPendingInstall = Boolean(versionState.pendingInstall && !versionState.installed)
   const pendingInstallPaused = Boolean(hasPendingInstall && versionState.pendingInstall?.paused)
-  const gameplayPlaytimeLabel = gameplayStats.available ? formatDuration(gameplayStats.totals.playtimeMs) : 'Пока нет данных'
-  const gameplayStatusLabel = gameplayStats.available ? formatGameplayStatusLabel(gameplayStats) : UNKNOWN_LABEL
-  const gameplayActivityLabel = gameplayStats.available ? formatDuration(gameplayStats.totals.activeMs) : 'Появится после первого запуска'
-  const gameplayServerLabel = gameplayStats.runtime.serverName || gameplayStats.runtime.serverAddress || UNKNOWN_LABEL
-  const heroSurfaceStyle = useMemo(() => ({
-    '--hero-art-image': showVersionArt ? `url("${selectedArt.image}")` : 'none',
-    '--hero-art-position': selectedArt.position || 'center center'
-  }), [selectedArt.image, selectedArt.position, showVersionArt])
-
   useEffect(() => {
     settingsRef.current = settings
   }, [settings])
+
+  useEffect(() => {
+    activeToastRef.current = activeToast
+  }, [activeToast])
+
+  useEffect(() => {
+    const nextImage = showVersionArt ? selectedArt.image : ''
+    const nextPosition = selectedArt.position || 'center center'
+
+    setHeroBackdrop((current) => {
+      if (current.currentImage === nextImage && current.currentPosition === nextPosition) {
+        return current
+      }
+
+      return {
+        currentImage: nextImage,
+        currentPosition: nextPosition,
+        previousImage: current.currentImage,
+        previousPosition: current.currentPosition,
+        token: current.token + 1
+      }
+    })
+
+    if (heroBackdropTimeoutRef.current) {
+      clearTimeout(heroBackdropTimeoutRef.current)
+    }
+
+    heroBackdropTimeoutRef.current = window.setTimeout(() => {
+      setHeroBackdrop((current) => ({
+        ...current,
+        previousImage: '',
+        previousPosition: current.currentPosition
+      }))
+      heroBackdropTimeoutRef.current = null
+    }, 860)
+
+    return () => {
+      if (heroBackdropTimeoutRef.current) {
+        clearTimeout(heroBackdropTimeoutRef.current)
+        heroBackdropTimeoutRef.current = null
+      }
+    }
+  }, [selectedArt.image, selectedArt.position, showVersionArt])
 
   function applyVersionState(nextState) {
     startTransition(() => {
@@ -789,7 +875,7 @@ function App() {
   }
 
   function processToastQueue() {
-    if (toastTimerRef.current || activeToast) {
+    if (toastTimerRef.current || activeToastRef.current) {
       return
     }
 
@@ -798,7 +884,9 @@ function App() {
       return
     }
 
-    setActiveToast({ ...nextToast, closing: false })
+    const resolvedToast = { ...nextToast, closing: false }
+    activeToastRef.current = resolvedToast
+    setActiveToast(resolvedToast)
     toastTimerRef.current = window.setTimeout(() => {
       beginToastClose()
     }, nextToast.duration || 5000)
@@ -816,7 +904,7 @@ function App() {
   }
 
   function beginToastClose() {
-    if (!activeToast) {
+    if (!activeToastRef.current) {
       clearToastTimers()
       return
     }
@@ -830,8 +918,14 @@ function App() {
       toastTimerRef.current = null
     }
 
-    setActiveToast((current) => (current ? { ...current, closing: true } : null))
+    setActiveToast((current) => {
+      if (!current) return null
+      const nextToast = { ...current, closing: true }
+      activeToastRef.current = nextToast
+      return nextToast
+    })
     toastDismissTimerRef.current = window.setTimeout(() => {
+      activeToastRef.current = null
       setActiveToast(null)
       toastDismissTimerRef.current = null
       processToastQueue()
@@ -843,20 +937,31 @@ function App() {
   }
 
   function enqueueToast(message, tone = 'neutral', key = message) {
-    const normalizedMessage = String(message || '').trim()
-    if (!normalizedMessage) return
+    const payload = message && typeof message === 'object'
+      ? message
+      : { message: String(message || '').trim() }
+    const normalizedMessage = String(payload.message || '').trim()
+    const resolvedTone = String(payload.tone || tone || 'neutral').trim() || 'neutral'
+    const resolvedTitle = String(payload.title || getToastTitle(resolvedTone, normalizedMessage)).trim()
+    const resolvedKey = String(
+      typeof key === 'string' && key.trim()
+        ? key
+        : payload.key || normalizedMessage || resolvedTitle
+    )
+    if (!normalizedMessage && !resolvedTitle) return
 
     const now = Date.now()
-    if (lastToastStampRef.current.key === key && now - lastToastStampRef.current.at < 1200) {
+    if (lastToastStampRef.current.key === resolvedKey && now - lastToastStampRef.current.at < 1200) {
       return
     }
 
-    lastToastStampRef.current = { key, at: now }
+    lastToastStampRef.current = { key: resolvedKey, at: now }
     const nextToast = {
       id: `${now}-${Math.random().toString(36).slice(2, 7)}`,
+      title: resolvedTitle,
       message: normalizedMessage,
-      tone,
-      duration: 5000
+      tone: resolvedTone,
+      duration: Math.max(1800, Number(payload.duration) || 5000)
     }
 
     if (document.hidden) {
@@ -876,6 +981,7 @@ function App() {
     setDraft((current) => ({
       ...current,
       installFolder: saved.installFolder,
+      playerName: saved.playerName || '',
       javaArgs: saved.javaArgs || '',
       memoryMb: saved.memoryMb,
       autoMemoryEnabled: saved.autoMemoryEnabled,
@@ -891,7 +997,10 @@ function App() {
     }
 
     if (options.notify) {
-      enqueueToast('Настройки применены', 'success', `settings-applied-${saved.installFolder}-${saved.memoryMb}-${saved.autoMemoryEnabled}`)
+      enqueueToast({
+        title: 'Настройка применена',
+        message: 'Изменения сохранены'
+      }, 'success', `settings-applied-${saved.installFolder}-${saved.memoryMb}-${saved.autoMemoryEnabled}`)
     }
 
     return saved
@@ -930,6 +1039,7 @@ function App() {
       setSettings(nextPayload)
       setDraft({
         ...nextPayload,
+        playerName: nextPayload.playerName || '',
         javaArgs: nextPayload.javaArgs || ''
       })
       setMemoryProfile({ ...DEFAULT_MEMORY_PROFILE, ...nextMemoryProfile })
@@ -1164,6 +1274,9 @@ function App() {
     if (page === 'settings' && draft.installFolder !== settingsRef.current.installFolder) {
       await commitInstallFolderDraft(draft.installFolder, { notify: true })
     }
+    if (draft.playerName !== settingsRef.current.playerName) {
+      await commitPlayerNameDraft(draft.playerName, { notify: true })
+    }
     startTransition(() => {
       setPage(nextPage)
     })
@@ -1185,7 +1298,10 @@ function App() {
       && settingsRef.current.skipJavaPromptVersions.includes(requiredJavaVersion)
 
     if (suppressed) {
-      enqueueToast(`Нужна Java ${requiredJavaVersion}. Установка пропущена по настройке.`, 'warning', `java-suppressed-${requiredJavaVersion}`)
+      enqueueToast({
+        title: `Нужна Java ${requiredJavaVersion}`,
+        message: 'Автоустановка отключена для этой версии'
+      }, 'warning', `java-suppressed-${requiredJavaVersion}`)
       return false
     }
 
@@ -1221,7 +1337,10 @@ function App() {
       if (javaPrompt.rememberChoice && javaPrompt.requiredJavaVersion) {
         await persistSkipJavaPrompt(javaPrompt.requiredJavaVersion, false)
       }
-      enqueueToast(`Java ${javaPrompt.requiredJavaVersion} установлена`, 'success', `java-installed-${javaPrompt.requiredJavaVersion}`)
+      enqueueToast({
+        title: `Java ${javaPrompt.requiredJavaVersion} готова`,
+        message: 'Runtime подготовлен для запуска'
+      }, 'success', `java-installed-${javaPrompt.requiredJavaVersion}`)
       closeJavaPrompt()
       await handlePrimaryAction()
     } catch (error) {
@@ -1231,7 +1350,10 @@ function App() {
         installing: false,
         status: message || current.status
       }))
-      enqueueToast(message || 'Не удалось установить Java', 'error', `java-install-error-${message}`)
+      enqueueToast({
+        title: 'Ошибка',
+        message: message || 'Не удалось установить Java'
+      }, 'error', `java-install-error-${message}`)
     }
   }
 
@@ -1264,6 +1386,11 @@ function App() {
 
     const nextActionMode = versionState.installed ? 'launch' : 'install'
 
+    const savedPlayerName = await commitPlayerNameDraft(draft.playerName, { notify: false })
+    if (draft.playerName && !savedPlayerName) {
+      return
+    }
+
     if (versionState.installed) {
       const javaReady = await ensureJavaReadyForLaunch(selectedVersion)
       if (!javaReady) {
@@ -1286,7 +1413,10 @@ function App() {
       } else {
         await api.installVersion(selectedVersion)
         await refreshVersionState(selectedVersion)
-        enqueueToast('Установлено', 'success', `installed-${selectedVersion}`)
+        enqueueToast({
+          title: 'Установлено',
+          message: 'Клиент готов к запуску'
+        }, 'success', `installed-${selectedVersion}`)
       }
     } catch (error) {
       const message = normalizeRemoteErrorMessage(error?.message)
@@ -1294,7 +1424,10 @@ function App() {
         await refreshVersionState(selectedVersion).catch(() => {})
       }
       setStatusText('')
-      enqueueToast(message, getToastToneFromMessage(message), `${nextActionMode}-${message}`)
+      enqueueToast({
+        title: getToastTitle(getToastToneFromMessage(message), message),
+        message
+      }, getToastToneFromMessage(message), `${nextActionMode}-${message}`)
     } finally {
       setBusy(false)
       setActionMode('idle')
@@ -1371,14 +1504,20 @@ function App() {
         setInstallProgress(DEFAULT_PROGRESS)
         setStatusText('')
         await refreshVersionState(selectedVersion)
-        enqueueToast('РЈСЃС‚Р°РЅРѕРІРєР° РѕС‚РјРµРЅРµРЅР° РїРѕР»СЊР·РѕРІР°С‚РµР»РµРј.', 'warning', `install-cancelled-${selectedVersion}`)
+        enqueueToast({
+          title: 'Загрузка остановлена',
+          message: 'Её можно продолжить позже'
+        }, 'warning', `install-cancelled-${selectedVersion}`)
       }
       if (shouldFinalizeDetachedPendingInstall) {
         setInstallPaused(false)
         setInstallProgress(DEFAULT_PROGRESS)
         setStatusText('')
         await refreshVersionState(selectedVersion)
-        enqueueToast('\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0430 \u043e\u0442\u043c\u0435\u043d\u0435\u043d\u0430 \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0435\u043c.', 'warning', `install-cancelled-${selectedVersion}`)
+        enqueueToast({
+          title: 'Загрузка остановлена',
+          message: 'Её можно продолжить позже'
+        }, 'warning', `install-cancelled-${selectedVersion}`)
       }
       return
     }
@@ -1447,11 +1586,97 @@ function App() {
     event.currentTarget.blur()
   }
 
+  async function commitPlayerNameDraft(nextValue = draft.playerName, options = {}) {
+    const normalizedName = String(nextValue || '').trim()
+    if (!normalizedName) {
+      if (!settingsRef.current.playerName && !draft.playerName) {
+        return settingsRef.current
+      }
+
+      const nextSettings = {
+        ...settingsRef.current,
+        playerName: ''
+      }
+      const saved = await persistSettingsSnapshot(nextSettings, { notify: false })
+      if (options.notify === true) {
+        enqueueToast({
+          title: 'Никнейм сохранён',
+          message: 'Будет использован системный ник'
+        }, 'success', 'player-name-saved-default')
+      }
+      return saved
+    }
+
+    if (!isValidMinecraftPlayerName(normalizedName)) {
+      enqueueToast({
+        title: 'Некорректный ник',
+        message: 'Разрешены только латиница, цифры и _ до 16 символов'
+      }, 'warning', `invalid-player-name-${normalizedName}`)
+      return null
+    }
+
+    if (normalizedName === settingsRef.current.playerName && normalizedName === draft.playerName) {
+      return settingsRef.current
+    }
+
+    const nextSettings = {
+      ...settingsRef.current,
+      playerName: normalizedName
+    }
+    const saved = await persistSettingsSnapshot(nextSettings, { notify: false })
+    if (options.notify === true) {
+      enqueueToast({
+        title: 'Никнейм сохранён',
+        message: `Будет использован ${saved.playerName}`
+      }, 'success', `player-name-saved-${saved.playerName}`)
+    }
+    return saved
+  }
+
+  async function handlePlayerNameBlur() {
+    if (draft.playerName !== settingsRef.current.playerName) {
+      await commitPlayerNameDraft(draft.playerName, { notify: true })
+    }
+  }
+
+  async function handlePlayerNameKeyDown(event) {
+    if (event.key !== 'Enter') return
+    event.preventDefault()
+    const saved = await commitPlayerNameDraft(event.currentTarget.value, { notify: true })
+    if (saved) {
+      event.currentTarget.blur()
+    }
+  }
+
+  function handlePlayerNameChange(event) {
+    const rawValue = String(event.target.value || '')
+    const sanitizedValue = sanitizePlayerNameInput(rawValue)
+
+    if (rawValue.length > 16) {
+      enqueueToast({
+        title: 'Ник укорочен',
+        message: 'Максимум 16 символов'
+      }, 'warning', 'player-name-too-long')
+    }
+
+    if (rawValue !== sanitizedValue) {
+      enqueueToast({
+        title: 'Некорректный ник',
+        message: 'Разрешены только латиница, цифры и _'
+      }, 'warning', 'invalid-player-name-input')
+    }
+
+    updateDraftField('playerName', sanitizedValue)
+  }
+
   function updateDraftField(field, value, options = {}) {
     if (options.notifySettings) {
       pendingSettingsToastRef.current = true
     }
-    setDraft((current) => ({ ...current, [field]: value }))
+    const nextValue = field === 'playerName'
+      ? normalizePlayerNameDraft(value)
+      : value
+    setDraft((current) => ({ ...current, [field]: nextValue }))
   }
 
   function handleAutoMemory() {
@@ -1509,7 +1734,7 @@ function App() {
 
   const featureLead = versionState.running
     ? `Клиент ${selectedProfile?.title || 'Royale Master'} уже запущен. Лаунчер можно закрыть, Minecraft продолжит работать.`
-    : (selectedProfile?.notes || 'Лаунчер для клиента Royale Master с отдельной установкой и прямым запуском.')
+    : (selectedProfile?.notes || 'Royale Master для Minecraft с отдельной установкой и быстрым запуском.')
 
   return (
     <div className={`app-shell ${shellLiteMode ? 'app-shell--lite' : ''}`}>
@@ -1561,11 +1786,32 @@ function App() {
             </div>
           ) : null}
 
+          <div key={page} className={`page-transition page-transition--${page}`}>
           {page === 'home' ? (
             <section
               className={`hero page-surface ${updateInfo.available ? 'has-update-banner' : ''}`}
-              style={heroSurfaceStyle}
             >
+              <div className="hero__backdrop-stack" aria-hidden="true">
+                {heroBackdrop.previousImage ? (
+                  <span
+                    className="hero__backdrop hero__backdrop--previous"
+                    style={{
+                      backgroundImage: `url("${heroBackdrop.previousImage}")`,
+                      backgroundPosition: heroBackdrop.previousPosition || 'center center'
+                    }}
+                  />
+                ) : null}
+                {heroBackdrop.currentImage ? (
+                  <span
+                    key={`${heroBackdrop.token}-${heroBackdrop.currentImage}`}
+                    className="hero__backdrop hero__backdrop--current"
+                    style={{
+                      backgroundImage: `url("${heroBackdrop.currentImage}")`,
+                      backgroundPosition: heroBackdrop.currentPosition || 'center center'
+                    }}
+                  />
+                ) : null}
+              </div>
               <div className="hero__column hero__column--main">
                 <div className="hero__intro">
                   <span className="eyebrow">{TEXT.heroEyebrow}</span>
@@ -1615,6 +1861,7 @@ function App() {
                     <div className={`feature-stage__visual feature-stage__visual--${selectedArt.tone}`}>
                       {showVersionArt ? (
                         <img
+                          key={selectedArt.image}
                           className="feature-stage__visual-image"
                           src={selectedArt.image}
                           alt=""
@@ -1642,15 +1889,17 @@ function App() {
                         <span>{TEXT.folderLabel}</span>
                         <strong>{versionState.installDir || 'Папка будет создана при первой установке'}</strong>
                       </div>
-                      <div className="feature-detail">
-                        <span>Наиграно</span>
-                        <strong>{gameplayPlaytimeLabel}</strong>
-                        <small>{gameplayActivityLabel}</small>
-                      </div>
-                      <div className="feature-detail">
-                        <span>Статус</span>
-                        <strong>{gameplayStatusLabel}</strong>
-                        <small>{gameplayServerLabel}</small>
+                      <div className="feature-detail feature-detail--wide feature-detail--player">
+                        <input
+                          className="feature-detail__input"
+                          value={draft.playerName || ''}
+                          maxLength={16}
+                          placeholder="Ник"
+                          aria-label="Никнейм игрока"
+                          onChange={handlePlayerNameChange}
+                          onBlur={handlePlayerNameBlur}
+                          onKeyDown={handlePlayerNameKeyDown}
+                        />
                       </div>
                     </div>
 
@@ -1838,6 +2087,7 @@ function App() {
               </div>
             </section>
           )}
+          </div>
         </main>
       </div>
 
@@ -1887,7 +2137,11 @@ function App() {
       {activeToast ? (
         <div className={`toast toast--${activeToast.tone} ${activeToast.closing ? 'is-leaving' : ''}`} role="status" aria-live="polite">
           <div className="toast__body">
-            <strong>{activeToast.message}</strong>
+            <ToastStatusIcon tone={activeToast.tone} />
+            <div className="toast__copy">
+              <strong>{activeToast.title || getToastTitle(activeToast.tone, activeToast.message)}</strong>
+              {activeToast.message && activeToast.message !== activeToast.title ? <span>{activeToast.message}</span> : null}
+            </div>
             <button className="toast__close" type="button" onClick={dismissActiveToast} aria-label="Закрыть уведомление">
               <CloseIcon />
             </button>

@@ -59,7 +59,17 @@ async function recreateDirectory(targetDir) {
   await fsp.mkdir(targetDir, { recursive: true })
 }
 
-async function copySourceToStage(sourceDir, stageDir) {
+function collectExternalManagedModNames(manifest) {
+  const entries = Array.isArray(manifest?.managedMods) ? manifest.managedMods : []
+  return new Set(
+    entries
+      .map((entry) => path.basename(String(entry?.fileName || entry?.name || '').trim()))
+      .filter(Boolean)
+  )
+}
+
+async function copySourceToStage(sourceDir, stageDir, manifest) {
+  const externalManagedMods = collectExternalManagedModNames(manifest)
   const entries = await fsp.readdir(sourceDir, { withFileTypes: true })
   for (const entry of entries) {
     if (SOURCE_EXCLUDES.has(entry.name)) {
@@ -68,6 +78,19 @@ async function copySourceToStage(sourceDir, stageDir) {
 
     const sourcePath = path.join(sourceDir, entry.name)
     const destinationPath = path.join(stageDir, entry.name)
+    if (entry.isDirectory() && entry.name === 'mods' && externalManagedMods.size > 0) {
+      await fsp.mkdir(destinationPath, { recursive: true })
+      const modEntries = await fsp.readdir(sourcePath, { withFileTypes: true })
+      for (const modEntry of modEntries) {
+        if (!modEntry.isFile() || externalManagedMods.has(modEntry.name)) {
+          continue
+        }
+
+        await fsp.cp(path.join(sourcePath, modEntry.name), path.join(destinationPath, modEntry.name), { recursive: true, force: true })
+      }
+      continue
+    }
+
     await fsp.cp(sourcePath, destinationPath, { recursive: true, force: true })
   }
 }
@@ -140,7 +163,7 @@ async function prepareClientPackage(versionName) {
   console.log(`Архив: ${zipPath}`)
 
   await recreateDirectory(stageDir)
-  await copySourceToStage(sourceDir, stageDir)
+  await copySourceToStage(sourceDir, stageDir, rawManifest)
   const manifest = await normalizeStageLayout(stageDir, path.join(stageDir, 'royale-client.json'), rawManifest)
 
   if (manifest.gameDir !== '.') {
