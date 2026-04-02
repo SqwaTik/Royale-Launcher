@@ -4924,7 +4924,7 @@ async function launchVersion(versionName) {
   return launchVersionTask(versionName)
 }
 
-async function launchVersionFlow(versionName) {
+async function launchVersionFlowLegacy(versionName) {
   return launchVersionTask(versionName)
 }
 
