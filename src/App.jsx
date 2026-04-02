@@ -637,14 +637,14 @@ function formatStorageInfo(storageInfo) {
 }
 
 function formatDuration(milliseconds) {
-  const totalSeconds = Math.max(0, Math.floor((Number(milliseconds) || 0) / 1000))
-  const days = Math.floor(totalSeconds / 86400)
-  const hours = Math.floor((totalSeconds % 86400) / 3600)
-  const minutes = Math.floor((totalSeconds % 3600) / 60)
-
-  if (days > 0) {
-    return `${days}д ${hours}ч ${minutes}м`
+  const numericValue = Number(milliseconds)
+  if (!Number.isFinite(numericValue) || numericValue < 0) {
+    return UNKNOWN_LABEL
   }
+
+  const totalSeconds = Math.max(0, Math.floor(numericValue / 1000))
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
 
   if (hours > 0) {
     return `${hours}ч ${minutes}м`
@@ -654,16 +654,19 @@ function formatDuration(milliseconds) {
 }
 
 function formatExactDuration(milliseconds) {
-  const totalSeconds = Math.max(0, Math.floor((Number(milliseconds) || 0) / 1000))
-  const days = Math.floor(totalSeconds / 86400)
-  const hours = Math.floor((totalSeconds % 86400) / 3600)
+  const numericValue = Number(milliseconds)
+  if (!Number.isFinite(numericValue) || numericValue < 0) {
+    return UNKNOWN_LABEL
+  }
+
+  const totalSeconds = Math.max(0, Math.floor(numericValue / 1000))
+  const hours = Math.floor(totalSeconds / 3600)
   const minutes = Math.floor((totalSeconds % 3600) / 60)
   const seconds = totalSeconds % 60
   const parts = []
 
-  if (days) parts.push(`${days} д`)
-  if (hours || days) parts.push(`${hours} ч`)
-  if (minutes || hours || days) parts.push(`${minutes} м`)
+  if (hours) parts.push(`${hours} ч`)
+  if (minutes || hours) parts.push(`${minutes} м`)
   parts.push(`${seconds} с`)
   return parts.join(' ')
 }
@@ -778,6 +781,7 @@ function App() {
   const lastToastStampRef = useRef({ key: '', at: 0 })
   const activeToastRef = useRef(null)
   const heroBackdropTimeoutRef = useRef(null)
+  const featureVisualTimeoutRef = useRef(null)
 
   const [page, setPage] = useState(initialPage)
   const [settings, setSettings] = useState(DEFAULT_SETTINGS)
@@ -803,6 +807,13 @@ function App() {
   const [activeToast, setActiveToast] = useState(null)
   const [heroFactIndex, setHeroFactIndex] = useState(0)
   const [heroBackdrop, setHeroBackdrop] = useState({
+    currentImage: '',
+    currentPosition: 'center center',
+    previousImage: '',
+    previousPosition: 'center center',
+    token: 0
+  })
+  const [featureVisual, setFeatureVisual] = useState({
     currentImage: '',
     currentPosition: 'center center',
     previousImage: '',
@@ -864,6 +875,45 @@ function App() {
       if (heroBackdropTimeoutRef.current) {
         clearTimeout(heroBackdropTimeoutRef.current)
         heroBackdropTimeoutRef.current = null
+      }
+    }
+  }, [selectedArt.image, selectedArt.position, showVersionArt])
+
+  useEffect(() => {
+    const nextImage = showVersionArt ? selectedArt.image : ''
+    const nextPosition = selectedArt.position || 'center center'
+
+    setFeatureVisual((current) => {
+      if (current.currentImage === nextImage && current.currentPosition === nextPosition) {
+        return current
+      }
+
+      return {
+        currentImage: nextImage,
+        currentPosition: nextPosition,
+        previousImage: current.currentImage,
+        previousPosition: current.currentPosition,
+        token: current.token + 1
+      }
+    })
+
+    if (featureVisualTimeoutRef.current) {
+      clearTimeout(featureVisualTimeoutRef.current)
+    }
+
+    featureVisualTimeoutRef.current = window.setTimeout(() => {
+      setFeatureVisual((current) => ({
+        ...current,
+        previousImage: '',
+        previousPosition: current.currentPosition
+      }))
+      featureVisualTimeoutRef.current = null
+    }, 920)
+
+    return () => {
+      if (featureVisualTimeoutRef.current) {
+        clearTimeout(featureVisualTimeoutRef.current)
+        featureVisualTimeoutRef.current = null
       }
     }
   }, [selectedArt.image, selectedArt.position, showVersionArt])
@@ -1275,7 +1325,7 @@ function App() {
       await commitInstallFolderDraft(draft.installFolder, { notify: true })
     }
     if (draft.playerName !== settingsRef.current.playerName) {
-      await commitPlayerNameDraft(draft.playerName, { notify: true })
+      await commitPlayerNameDraft(draft.playerName, { notify: true, forceToast: true })
     }
     startTransition(() => {
       setPage(nextPage)
@@ -1616,6 +1666,12 @@ function App() {
     }
 
     if (normalizedName === settingsRef.current.playerName && normalizedName === draft.playerName) {
+      if (options.notify === true && options.forceToast === true) {
+        enqueueToast({
+          title: 'Никнейм сохранён',
+          message: `Будет использован ${normalizedName}`
+        }, 'success', `player-name-saved-${normalizedName}`)
+      }
       return settingsRef.current
     }
 
@@ -1859,18 +1915,31 @@ function App() {
 
                   <div className="feature-stage__panel">
                     <div className={`feature-stage__visual feature-stage__visual--${selectedArt.tone}`}>
-                      {showVersionArt ? (
-                        <img
-                          key={selectedArt.image}
-                          className="feature-stage__visual-image"
-                          src={selectedArt.image}
-                          alt=""
-                          decoding="async"
-                          loading="lazy"
-                          fetchPriority="low"
-                          style={{ objectPosition: selectedArt.position || 'center center' }}
-                        />
-                      ) : null}
+                      <div className="feature-stage__visual-stack" aria-hidden="true">
+                        {featureVisual.previousImage ? (
+                          <img
+                            className="feature-stage__visual-image feature-stage__visual-image--previous"
+                            src={featureVisual.previousImage}
+                            alt=""
+                            decoding="async"
+                            loading="lazy"
+                            fetchPriority="low"
+                            style={{ objectPosition: featureVisual.previousPosition || 'center center' }}
+                          />
+                        ) : null}
+                        {featureVisual.currentImage ? (
+                          <img
+                            key={`${featureVisual.token}-${featureVisual.currentImage}`}
+                            className="feature-stage__visual-image feature-stage__visual-image--current"
+                            src={featureVisual.currentImage}
+                            alt=""
+                            decoding="async"
+                            loading="lazy"
+                            fetchPriority="low"
+                            style={{ objectPosition: featureVisual.currentPosition || 'center center' }}
+                          />
+                        ) : null}
+                      </div>
                     </div>
 
                     <div className="feature-stage__header">

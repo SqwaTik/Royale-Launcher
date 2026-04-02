@@ -2568,27 +2568,26 @@ async function persistGameplayStatsCache(versionName, payload) {
 }
 
 async function readGameplayStats(versionName, installDir) {
-  if (!installDir) {
-    return createGameplayStatsSnapshot()
+  const cachePath = getGameplayStatsCachePath(versionName)
+  const statsPath = installDir ? getGameplayStatsPath(installDir) : ''
+
+  if (statsPath) {
+    try {
+      await fsp.access(statsPath)
+      const value = await readJsonFile(statsPath)
+      await persistGameplayStatsCache(versionName, value).catch(() => {})
+      return normalizeGameplayStats(value, statsPath)
+    } catch {}
   }
 
-  const statsPath = getGameplayStatsPath(installDir)
-  const cachePath = getGameplayStatsCachePath(versionName)
   try {
-    await fsp.access(statsPath)
-    const value = await readJsonFile(statsPath)
-    await persistGameplayStatsCache(versionName, value).catch(() => {})
-    return normalizeGameplayStats(value, statsPath)
+    await fsp.access(cachePath)
+    const cachedValue = await readJsonFile(cachePath)
+    return normalizeGameplayStats(cachedValue, cachePath)
   } catch {
-    try {
-      await fsp.access(cachePath)
-      const cachedValue = await readJsonFile(cachePath)
-      return normalizeGameplayStats(cachedValue, cachePath)
-    } catch {
-      return {
-        ...createGameplayStatsSnapshot(),
-        filePath: statsPath
-      }
+    return {
+      ...createGameplayStatsSnapshot(),
+      filePath: statsPath || cachePath
     }
   }
 }

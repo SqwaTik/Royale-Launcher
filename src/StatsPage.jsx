@@ -95,27 +95,33 @@ const DATE_TIME_FORMATTER = new Intl.DateTimeFormat('ru-RU', {
 })
 
 function formatDuration(milliseconds) {
-  const totalSeconds = Math.max(0, Math.floor((Number(milliseconds) || 0) / 1000))
-  const days = Math.floor(totalSeconds / 86400)
-  const hours = Math.floor((totalSeconds % 86400) / 3600)
+  const numericValue = Number(milliseconds)
+  if (!Number.isFinite(numericValue) || numericValue < 0) {
+    return UNKNOWN_LABEL
+  }
+
+  const totalSeconds = Math.max(0, Math.floor(numericValue / 1000))
+  const hours = Math.floor(totalSeconds / 3600)
   const minutes = Math.floor((totalSeconds % 3600) / 60)
 
-  if (days > 0) return `${days} д ${hours} ч ${minutes} м`
   if (hours > 0) return `${hours} ч ${minutes} м`
   return `${minutes} м`
 }
 
 function formatExactDuration(milliseconds) {
-  const totalSeconds = Math.max(0, Math.floor((Number(milliseconds) || 0) / 1000))
-  const days = Math.floor(totalSeconds / 86400)
-  const hours = Math.floor((totalSeconds % 86400) / 3600)
+  const numericValue = Number(milliseconds)
+  if (!Number.isFinite(numericValue) || numericValue < 0) {
+    return UNKNOWN_LABEL
+  }
+
+  const totalSeconds = Math.max(0, Math.floor(numericValue / 1000))
+  const hours = Math.floor(totalSeconds / 3600)
   const minutes = Math.floor((totalSeconds % 3600) / 60)
   const seconds = totalSeconds % 60
   const parts = []
 
-  if (days) parts.push(`${days} д`)
-  if (hours || days) parts.push(`${hours} ч`)
-  if (minutes || hours || days) parts.push(`${minutes} м`)
+  if (hours) parts.push(`${hours} ч`)
+  if (minutes || hours) parts.push(`${minutes} м`)
   parts.push(`${seconds} с`)
   return parts.join(' ')
 }
@@ -128,6 +134,21 @@ function formatDateTime(value) {
   } catch {
     return UNKNOWN_LABEL
   }
+}
+
+function mapRuntimeWorldLabel(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (!normalized || normalized === 'unknown' || normalized === 'vanilla') {
+    return UNKNOWN_LABEL
+  }
+
+  if (normalized === 'overworld') return 'Верхний мир'
+  if (normalized === 'the_nether' || normalized === 'nether') return 'Незер'
+  if (normalized === 'the_end' || normalized === 'end') return 'Энд'
+  if (normalized === 'singleplayer' || normalized === 'local') return 'Локальный мир'
+  if (normalized === 'multiplayer' || normalized === 'server') return 'Сервер'
+
+  return value
 }
 
 function formatRuntimeStatus(stats) {
@@ -148,7 +169,7 @@ function formatRuntimeServer(stats) {
   if (!serverName && !serverAddress) {
     return 'Локальный мир'
   }
-  if (/^vanilla$/i.test(serverName)) {
+  if (/^vanilla$/i.test(serverName) || /^localhost$/i.test(serverName)) {
     return 'Локальный мир'
   }
   return serverName || serverAddress || UNKNOWN_LABEL
@@ -159,9 +180,7 @@ function formatRuntimeWorld(stats) {
   if (!stats?.available || !runtime.isInWorld) {
     return 'Не в игре'
   }
-  const value = String(runtime.worldType || '').trim()
-  if (!value) return UNKNOWN_LABEL
-  return /^vanilla$/i.test(value) ? 'Обычный мир' : value
+  return mapRuntimeWorldLabel(runtime.worldType)
 }
 
 function formatPercent(value, total) {
@@ -369,13 +388,11 @@ const StatsPage = memo(function StatsPage({ api, selectedVersion, hasUpdateBanne
       }
     }
 
-    window.addEventListener('click', closePopover)
     window.addEventListener('blur', closePopover)
     window.addEventListener('resize', closePopover)
     window.addEventListener('keydown', handleEscape)
 
     return () => {
-      window.removeEventListener('click', closePopover)
       window.removeEventListener('blur', closePopover)
       window.removeEventListener('resize', closePopover)
       window.removeEventListener('keydown', handleEscape)
@@ -384,6 +401,9 @@ const StatsPage = memo(function StatsPage({ api, selectedVersion, hasUpdateBanne
 
   useEffect(() => {
     const pageNode = pageRef.current
+    const previousBodyOverflow = document.body.style.overflow
+    const previousDocumentOverflow = document.documentElement.style.overflow
+
     if (!popover || !pageNode) {
       return
     }
@@ -394,11 +414,15 @@ const StatsPage = memo(function StatsPage({ api, selectedVersion, hasUpdateBanne
     }
 
     pageNode.style.overflowY = 'hidden'
+    document.body.style.overflow = 'hidden'
+    document.documentElement.style.overflow = 'hidden'
     pageNode.addEventListener('wheel', preventScroll, { passive: false })
     pageNode.addEventListener('touchmove', preventScroll, { passive: false })
 
     return () => {
       pageNode.style.overflowY = previousOverflow
+      document.body.style.overflow = previousBodyOverflow
+      document.documentElement.style.overflow = previousDocumentOverflow
       pageNode.removeEventListener('wheel', preventScroll)
       pageNode.removeEventListener('touchmove', preventScroll)
     }
@@ -415,6 +439,14 @@ const StatsPage = memo(function StatsPage({ api, selectedVersion, hasUpdateBanne
     [timeline]
   )
   const favoriteVersion = deferredDashboard.highlights.favoriteVersion || null
+  const gameplayAvailable = Boolean(gameplay.available)
+  const runtimeStatusLabel = useMemo(() => formatRuntimeStatus(gameplay), [gameplay])
+  const runtimeServerLabel = useMemo(() => formatRuntimeServer(gameplay), [gameplay])
+  const runtimeWorldLabel = useMemo(() => formatRuntimeWorld(gameplay), [gameplay])
+  const playtimeLabel = gameplayAvailable ? formatDuration(gameplay.totals.playtimeMs) : UNKNOWN_LABEL
+  const activeLabel = gameplayAvailable ? formatDuration(gameplay.totals.activeMs) : UNKNOWN_LABEL
+  const pvpLabel = gameplayAvailable ? formatDuration(gameplay.totals.pvpMs) : UNKNOWN_LABEL
+  const afkLabel = gameplayAvailable ? formatDuration(gameplay.totals.afkMs) : UNKNOWN_LABEL
 
   function openDetails(event) {
     event.preventDefault()
@@ -443,31 +475,31 @@ const StatsPage = memo(function StatsPage({ api, selectedVersion, hasUpdateBanne
         <StatsMetricCard
           tone="amber"
           label="Наиграно"
-          value={formatDuration(gameplay.totals.playtimeMs)}
+          value={playtimeLabel}
           title="Общее время в мире"
-          hint={gameplay.available ? 'Нажмите для детальной разбивки' : 'Появится после первого запуска клиента'}
-          interactive={gameplay.available}
+          hint={gameplayAvailable ? 'Нажмите для детальной разбивки' : 'Появится после первого запуска клиента'}
+          interactive={gameplayAvailable}
           onClick={openDetails}
           onContextMenu={openDetails}
         />
         <StatsMetricCard
           tone="green"
           label="Активно"
-          value={formatDuration(gameplay.totals.activeMs)}
+          value={activeLabel}
           title="Без AFK"
           hint="Время с действиями игрока"
         />
         <StatsMetricCard
           tone="amber"
           label="PvP"
-          value={formatDuration(gameplay.totals.pvpMs)}
+          value={pvpLabel}
           title="Боевые сессии"
           hint={`Входов в бой: ${gameplay.totals.combatEntries || 0}`}
         />
         <StatsMetricCard
           tone="red"
           label="AFK"
-          value={formatDuration(gameplay.totals.afkMs)}
+          value={afkLabel}
           title="Паузы и бездействие"
           hint={`Сессий: ${gameplay.totals.sessions || 0}`}
         />
@@ -482,7 +514,7 @@ const StatsPage = memo(function StatsPage({ api, selectedVersion, hasUpdateBanne
             </div>
             <div className="stats-panel__actions">
               <span className="stats-panel__meta">
-                {formatRuntimeStatus(gameplay)}
+                {runtimeStatusLabel}
               </span>
             </div>
           </div>
@@ -508,16 +540,22 @@ const StatsPage = memo(function StatsPage({ api, selectedVersion, hasUpdateBanne
             <div className="stats-feed__item stats-feed__item--compact">
               <div className="stats-feed__head">
                 <strong>Сейчас</strong>
-                <span>{formatRuntimeStatus(gameplay)}</span>
+                <span>{runtimeStatusLabel}</span>
               </div>
               <div className="stats-feed__body">
-                <p>Сервер: {formatRuntimeServer(gameplay)}</p>
-                <p>Режим: {formatRuntimeWorld(gameplay)}</p>
-                <p>
-                  AFK: {gameplay.runtime.isInWorld ? (gameplay.runtime.isAfk ? 'Да' : 'Нет') : 'Нет'}
-                  {' · '}
-                  PvP: {gameplay.runtime.isInWorld ? (gameplay.runtime.isInPvp ? 'Да' : 'Нет') : 'Нет'}
-                </p>
+                {gameplay.runtime.isInWorld ? (
+                  <>
+                    <p>Сервер: {runtimeServerLabel}</p>
+                    <p>Мир: {runtimeWorldLabel}</p>
+                    <p>
+                      AFK: {gameplay.runtime.isAfk ? 'Да' : 'Нет'}
+                      {' · '}
+                      PvP: {gameplay.runtime.isInPvp ? 'Да' : 'Нет'}
+                    </p>
+                  </>
+                ) : (
+                  <p>Игровая сессия сейчас не активна.</p>
+                )}
               </div>
             </div>
           </div>
