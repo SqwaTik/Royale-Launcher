@@ -1299,7 +1299,7 @@ function App() {
     return () => {
       cancelIdleTask(idleHandle)
     }
-  }, [page, selectedVersion, bootstrapped, lowPerformanceMode])
+  }, [page, bootstrapped, lowPerformanceMode])
 
   useEffect(() => {
     if (busy || !shouldPollVersionState) return undefined
@@ -1691,14 +1691,14 @@ function App() {
 
   async function handlePlayerNameBlur() {
     if (draft.playerName !== settingsRef.current.playerName) {
-      await commitPlayerNameDraft(draft.playerName, { notify: true })
+      await commitPlayerNameDraft(draft.playerName, { notify: true, forceToast: true })
     }
   }
 
   async function handlePlayerNameKeyDown(event) {
     if (event.key !== 'Enter') return
     event.preventDefault()
-    const saved = await commitPlayerNameDraft(event.currentTarget.value, { notify: true })
+    const saved = await commitPlayerNameDraft(event.currentTarget.value, { notify: true, forceToast: true })
     if (saved) {
       event.currentTarget.blur()
     }

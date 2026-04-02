@@ -991,9 +991,13 @@ async function getStatsDashboard(versionName = '') {
 
     const settings = await loadSettings()
     const selectedVersion = settings.versions.find((entry) => entry.versionName === versionName)?.versionName || settings.lastSelectedVersion
+    const runningClient = await getActiveRunningClientState()
+    const gameplay = await readGameplayStats(selectedVersion, resolveVersionDirectory(settings, selectedVersion))
     return {
       ...statsDashboardCache,
-      gameplay: await readGameplayStats(selectedVersion, resolveVersionDirectory(settings, selectedVersion)),
+      gameplay: runningClient && runningClient.versionName.toLowerCase() === selectedVersion.toLowerCase()
+        ? gameplay
+        : markGameplayStatsInactive(gameplay),
       selectedVersion
     }
   }
@@ -1001,10 +1005,11 @@ async function getStatsDashboard(versionName = '') {
   const settings = await loadSettings()
   const selectedVersion = settings.versions.find((entry) => entry.versionName === versionName)?.versionName || settings.lastSelectedVersion
 
-  const [storage, catalog, gameplay] = await Promise.all([
+  const [storage, catalog, gameplay, runningClient] = await Promise.all([
     loadStatsStorage(),
     loadVersionCatalog(),
-    readGameplayStats(selectedVersion, resolveVersionDirectory(settings, selectedVersion))
+    readGameplayStats(selectedVersion, resolveVersionDirectory(settings, selectedVersion)),
+    getActiveRunningClientState()
   ])
 
   const events = storage.events
@@ -1148,7 +1153,9 @@ async function getStatsDashboard(versionName = '') {
   statsDashboardDirty = false
   return {
     ...statsDashboardCache,
-    gameplay,
+    gameplay: runningClient && runningClient.versionName.toLowerCase() === selectedVersion.toLowerCase()
+      ? gameplay
+      : markGameplayStatsInactive(gameplay),
     selectedVersion
   }
 }
@@ -2194,13 +2201,13 @@ async function getVersionStateFromSettings(settings, versionName) {
   const version = settings.versions.find((entry) => entry.versionName === versionName) || settings.versions[0]
   const installDir = resolveVersionDirectory(settings, version.versionName)
   const installedClient = await inspectInstalledClient(installDir, version.versionName)
-  const gameplayStats = await readGameplayStats(version.versionName, installDir)
   const source = resolveSourceDescriptor(version.source)
   const runningClient = await getActiveRunningClientState()
   const pendingInstall = source.kind === 'remote' || source.kind === 'github-release-asset'
     ? await getResumableInstallState(version.versionName, getSourceDescriptorResumeKey(source))
     : null
   const running = Boolean(runningClient && runningClient.versionName.toLowerCase() === version.versionName.toLowerCase())
+  const gameplayStats = await readGameplayStats(version.versionName, installDir)
 
   return {
     installDir,
@@ -2211,7 +2218,7 @@ async function getVersionStateFromSettings(settings, versionName) {
     title: version.title,
     channel: version.channel,
     notes: version.notes,
-    gameplayStats,
+    gameplayStats: running ? gameplayStats : markGameplayStatsInactive(gameplayStats),
     pendingInstall,
     running,
     runningPid: running ? runningClient.pid : 0
@@ -2590,6 +2597,26 @@ async function readGameplayStats(versionName, installDir) {
       filePath: statsPath || cachePath
     }
   }
+}
+
+function markGameplayStatsInactive(input = {}) {
+  const gameplay = {
+    ...createGameplayStatsSnapshot(),
+    ...input,
+    runtime: {
+      ...(input.runtime && typeof input.runtime === 'object' ? input.runtime : {}),
+      status: '',
+      statusLabel: '',
+      serverName: '',
+      serverAddress: '',
+      worldType: '',
+      isInWorld: false,
+      isInPvp: false,
+      isAfk: false
+    }
+  }
+
+  return gameplay
 }
 
 function getCurrentRuleOsName() {

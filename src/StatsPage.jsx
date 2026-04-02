@@ -413,11 +413,13 @@ const StatsPage = memo(function StatsPage({ api, selectedVersion, hasUpdateBanne
       event.preventDefault()
     }
 
-    pageNode.style.overflowY = 'hidden'
+    pageNode.style.overflowY = 'clip'
     document.body.style.overflow = 'hidden'
     document.documentElement.style.overflow = 'hidden'
     pageNode.addEventListener('wheel', preventScroll, { passive: false })
     pageNode.addEventListener('touchmove', preventScroll, { passive: false })
+    window.addEventListener('wheel', preventScroll, { passive: false })
+    window.addEventListener('touchmove', preventScroll, { passive: false })
 
     return () => {
       pageNode.style.overflowY = previousOverflow
@@ -425,6 +427,8 @@ const StatsPage = memo(function StatsPage({ api, selectedVersion, hasUpdateBanne
       document.documentElement.style.overflow = previousDocumentOverflow
       pageNode.removeEventListener('wheel', preventScroll)
       pageNode.removeEventListener('touchmove', preventScroll)
+      window.removeEventListener('wheel', preventScroll)
+      window.removeEventListener('touchmove', preventScroll)
     }
   }, [popover])
 

@@ -4009,3 +4009,134 @@ input {
     transform: scale(1.03);
   }
 }
+
+.feature-stage__badge,
+.stats-page__status,
+.version-item__state,
+.catalog-row__state {
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.18);
+}
+
+.feature-stage__overlay {
+  gap: 8px;
+  padding: 14px 16px 16px;
+}
+
+.feature-stage__panel {
+  width: min(396px, 100%);
+  gap: 7px;
+  padding: 11px;
+  margin-top: 2px;
+  margin-bottom: 0;
+  overflow: hidden;
+}
+
+.feature-stage__visual {
+  min-height: 78px;
+  flex: 0 0 78px;
+}
+
+.feature-stage__visual-image {
+  opacity: 0.94;
+  transform: scale(1.006);
+}
+
+.feature-stage__header {
+  gap: 4px;
+}
+
+.feature-stage__header h2 {
+  font-size: clamp(30px, 2.35vw, 38px);
+  line-height: 0.92;
+}
+
+.feature-stage__title {
+  margin-top: 1px;
+  font-size: 14px;
+}
+
+.feature-stage__lead {
+  margin-top: 0;
+  font-size: 11.5px;
+  line-height: 1.48;
+}
+
+.feature-stage__fact-inline {
+  margin-top: 2px;
+  min-height: 30px;
+}
+
+.feature-stage__fact-text {
+  min-height: 28px;
+  font-size: 11.5px;
+  line-height: 1.42;
+}
+
+.feature-stage__details {
+  gap: 7px;
+}
+
+.feature-detail {
+  padding: 10px 12px;
+}
+
+.feature-detail--player {
+  min-height: 0;
+}
+
+.feature-detail__input {
+  min-height: 42px;
+  padding: 0 15px;
+  border-radius: 16px;
+  font-size: 14px;
+}
+
+.feature-stage__action-shell {
+  margin-top: 4px;
+}
+
+.feature-stage__action-shell .primary-action {
+  width: calc(100% - 8px);
+  margin-inline: auto;
+  min-height: 56px;
+  padding: 0 18px;
+  border-radius: 22px;
+}
+
+.feature-stage__action-shell .primary-action__title {
+  font-size: 17px;
+}
+
+.feature-stage__action-shell .primary-action__meta {
+  font-size: 10.5px;
+  line-height: 1.3;
+}
+
+.feature-stage__busy-actions {
+  right: 14px;
+}
+
+.stats-page.is-modal-open {
+  overflow: clip !important;
+}
+
+.stats-context-backdrop {
+  overscroll-behavior: none;
+  touch-action: none;
+}
+
+.stats-context {
+  width: min(540px, calc(100vw - 40px));
+  max-height: none;
+  overflow: hidden;
+}
+
+.stats-context__grid {
+  gap: 9px;
+}
+
+.stats-context__row {
+  padding: 7px 0;
+}
