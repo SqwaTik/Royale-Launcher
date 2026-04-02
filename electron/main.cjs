@@ -3526,9 +3526,9 @@ function getLaunchPlayerName(settings) {
     return preferred
   }
 
-  const candidate = String(process.env.MINECRAFT_USERNAME || process.env.USERNAME || process.env.USER || 'RoyalePlayer').trim()
+  const candidate = String(process.env.MINECRAFT_USERNAME || process.env.USERNAME || process.env.USER || 'Player').trim()
   const sanitized = sanitizeMinecraftPlayerName(candidate)
-  return sanitized || 'RoyalePlayer'
+  return sanitized || 'Player'
 }
 
 function createOfflineUuid(playerName) {

@@ -775,6 +775,7 @@ function App() {
   const memoryLoadedRef = useRef(false)
   const pendingSettingsToastRef = useRef(false)
   const settingsRef = useRef(DEFAULT_SETTINGS)
+  const draftRef = useRef(DEFAULT_SETTINGS)
   const toastQueueRef = useRef([])
   const toastTimerRef = useRef(null)
   const hiddenToastQueueRef = useRef([])
@@ -835,6 +836,10 @@ function App() {
   useEffect(() => {
     settingsRef.current = settings
   }, [settings])
+
+  useEffect(() => {
+    draftRef.current = draft
+  }, [draft])
 
   useEffect(() => {
     activeToastRef.current = activeToast
@@ -1321,11 +1326,12 @@ function App() {
   }, [api, selectedVersion, versionState.running, busy, shouldPollVersionState])
 
   async function openPage(nextPage) {
-    if (page === 'settings' && draft.installFolder !== settingsRef.current.installFolder) {
-      await commitInstallFolderDraft(draft.installFolder, { notify: true })
+    const currentDraft = draftRef.current
+    if (page === 'settings' && currentDraft.installFolder !== settingsRef.current.installFolder) {
+      await commitInstallFolderDraft(currentDraft.installFolder, { notify: true })
     }
-    if (draft.playerName !== settingsRef.current.playerName) {
-      await commitPlayerNameDraft(draft.playerName, { notify: true, forceToast: true })
+    if (currentDraft.playerName !== settingsRef.current.playerName) {
+      await commitPlayerNameDraft(currentDraft.playerName, { notify: true, forceToast: true })
     }
     startTransition(() => {
       setPage(nextPage)
@@ -1436,8 +1442,9 @@ function App() {
 
     const nextActionMode = versionState.installed ? 'launch' : 'install'
 
-    const savedPlayerName = await commitPlayerNameDraft(draft.playerName, { notify: false })
-    if (draft.playerName && !savedPlayerName) {
+    const currentDraft = draftRef.current
+    const savedPlayerName = await commitPlayerNameDraft(currentDraft.playerName, { notify: false })
+    if (currentDraft.playerName && !savedPlayerName) {
       return
     }
 
@@ -1638,6 +1645,9 @@ function App() {
 
   async function commitPlayerNameDraft(nextValue = draft.playerName, options = {}) {
     const normalizedName = String(nextValue || '').trim()
+    const toastKeySuffix = options.forceToast === true
+      ? `${normalizedName || 'default'}-${Date.now()}`
+      : (normalizedName || 'default')
     if (!normalizedName) {
       if (!settingsRef.current.playerName && !draft.playerName) {
         return settingsRef.current
@@ -1652,7 +1662,7 @@ function App() {
         enqueueToast({
           title: 'Никнейм сохранён',
           message: 'Будет использован системный ник'
-        }, 'success', 'player-name-saved-default')
+        }, 'success', `player-name-saved-${toastKeySuffix}`)
       }
       return saved
     }
@@ -1670,7 +1680,7 @@ function App() {
         enqueueToast({
           title: 'Никнейм сохранён',
           message: `Будет использован ${normalizedName}`
-        }, 'success', `player-name-saved-${normalizedName}`)
+        }, 'success', `player-name-saved-${toastKeySuffix}`)
       }
       return settingsRef.current
     }
@@ -1684,14 +1694,15 @@ function App() {
       enqueueToast({
         title: 'Никнейм сохранён',
         message: `Будет использован ${saved.playerName}`
-      }, 'success', `player-name-saved-${saved.playerName}`)
+      }, 'success', `player-name-saved-${toastKeySuffix}`)
     }
     return saved
   }
 
   async function handlePlayerNameBlur() {
-    if (draft.playerName !== settingsRef.current.playerName) {
-      await commitPlayerNameDraft(draft.playerName, { notify: true, forceToast: true })
+    const currentPlayerName = draftRef.current.playerName
+    if (currentPlayerName !== settingsRef.current.playerName) {
+      await commitPlayerNameDraft(currentPlayerName, { notify: true, forceToast: true })
     }
   }
 
@@ -1722,6 +1733,10 @@ function App() {
       }, 'warning', 'invalid-player-name-input')
     }
 
+    draftRef.current = {
+      ...draftRef.current,
+      playerName: sanitizedValue
+    }
     updateDraftField('playerName', sanitizedValue)
   }
 
