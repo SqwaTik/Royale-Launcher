@@ -4025,11 +4025,11 @@ input {
 }
 
 .feature-stage__panel {
-  width: min(396px, 100%);
+  width: min(410px, 100%);
   gap: 7px;
-  padding: 11px;
+  padding: 11px 12px 14px;
   margin-top: 2px;
-  margin-bottom: 0;
+  margin-bottom: 4px;
   overflow: hidden;
 }
 
@@ -4098,7 +4098,7 @@ input {
 }
 
 .feature-stage__action-shell .primary-action {
-  width: calc(100% - 8px);
+  width: calc(100% - 4px);
   margin-inline: auto;
   min-height: 56px;
   padding: 0 18px;

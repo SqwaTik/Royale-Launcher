@@ -122,6 +122,8 @@ const DEFAULT_UPDATE_INFO = {
   available: false,
   version: '',
   url: '',
+  pageUrl: '',
+  assetName: '',
   currentVersion: ''
 }
 
@@ -801,6 +803,7 @@ function App() {
   const [cancelRememberChoice, setCancelRememberChoice] = useState(false)
   const [javaPrompt, setJavaPrompt] = useState(DEFAULT_JAVA_PROMPT)
   const [updateInfo, setUpdateInfo] = useState(DEFAULT_UPDATE_INFO)
+  const [installingUpdate, setInstallingUpdate] = useState(false)
   const [memoryProfile, setMemoryProfile] = useState(DEFAULT_MEMORY_PROFILE)
   const [storageInfo, setStorageInfo] = useState(DEFAULT_STORAGE_INFO)
   const [bootstrapped, setBootstrapped] = useState(false)
@@ -1626,8 +1629,25 @@ function App() {
   }
 
   async function handleOpenUpdate() {
-    if (!updateInfo.url) return
-    await api.openExternal(updateInfo.url)
+    if (installingUpdate) return
+
+    try {
+      setInstallingUpdate(true)
+      const result = await api.installLauncherUpdate()
+      if (!result?.started) {
+        setInstallingUpdate(false)
+        enqueueToast({
+          title: 'Обновление не требуется',
+          message: 'Уже установлена актуальная версия лаунчера'
+        }, 'info', 'launcher-update-not-needed')
+      }
+    } catch (error) {
+      setInstallingUpdate(false)
+      enqueueToast({
+        title: 'Ошибка обновления',
+        message: normalizeErrorMessage(error, TEXT.launchError)
+      }, 'error', 'launcher-update-failed')
+    }
   }
 
   async function handleInstallFolderBlur() {
@@ -1852,7 +1872,7 @@ function App() {
           {updateInfo.available ? (
             <div className="update-banner" role="status" aria-live="polite">
               <button className="update-banner__button" onClick={handleOpenUpdate}>
-                {`${TEXT.updateAction} v${updateInfo.version}`}
+                {installingUpdate ? 'Скачиваю обновление...' : `${TEXT.updateAction} v${updateInfo.version}`}
               </button>
             </div>
           ) : null}

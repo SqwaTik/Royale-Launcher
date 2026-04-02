@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('royaleApi', {
   getMemoryProfile: () => ipcRenderer.invoke('system:get-memory-profile'),
   getStorageInfo: (targetPath) => ipcRenderer.invoke('system:get-storage-info', targetPath),
   checkLauncherUpdate: () => ipcRenderer.invoke('launcher:check-update'),
+  installLauncherUpdate: () => ipcRenderer.invoke('launcher:install-update'),
   pickFolder: () => ipcRenderer.invoke('dialog:pick-folder'),
   openFolder: (targetPath) => ipcRenderer.invoke('shell:open-folder', targetPath),
   openExternal: (targetUrl) => ipcRenderer.invoke('shell:open-external', targetUrl),

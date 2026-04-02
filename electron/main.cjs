@@ -4086,11 +4086,18 @@ async function checkLauncherUpdate() {
     const release = await response.json()
     const latestVersion = stripVersionPrefix(release.tag_name || release.name || '')
     const htmlUrl = String(release.html_url || launcherConfig.releasePage || '').trim()
+    const assets = Array.isArray(release?.assets) ? release.assets : []
+    const installerAsset = assets.find((asset) => String(asset?.name || '').toLowerCase() === 'royalelauncherinstaller.exe')
+      || assets.find((asset) => String(asset?.name || '').toLowerCase().endsWith('.exe'))
+    const installerUrl = String(installerAsset?.browser_download_url || '').trim()
+    const installerName = String(installerAsset?.name || '').trim()
 
     return {
       available: Boolean(latestVersion) && compareVersions(latestVersion, currentVersion) > 0,
       version: latestVersion,
-      url: htmlUrl,
+      url: installerUrl || htmlUrl,
+      pageUrl: htmlUrl,
+      assetName: installerName,
       currentVersion
     }
   } catch {
@@ -4098,9 +4105,60 @@ async function checkLauncherUpdate() {
       available: false,
       version: '',
       url: launcherConfig.releasePage || '',
+      pageUrl: launcherConfig.releasePage || '',
+      assetName: '',
       currentVersion
     }
   }
+}
+
+function escapePowerShellSingleQuoted(value) {
+  return String(value || '').replace(/'/g, "''")
+}
+
+async function installLauncherUpdate() {
+  const update = await checkLauncherUpdate()
+  if (!update.available) {
+    return { started: false, reason: 'up-to-date' }
+  }
+
+  if (!update.url || !/\.exe(\?|$)/i.test(update.url)) {
+    throw new Error('Не найден installer для обновления лаунчера.')
+  }
+
+  const updateDir = path.join(app.getPath('temp'), 'RoyaleLauncherUpdate')
+  const installerName = update.assetName || `RoyaleLauncherInstaller-v${update.version || app.getVersion()}.exe`
+  const installerPath = path.join(updateDir, installerName)
+  await downloadRemoteFile(update.url, installerPath)
+
+  const currentExe = process.execPath
+  const currentPid = process.pid
+  const psScript = [
+    `$installer = '${escapePowerShellSingleQuoted(installerPath)}'`,
+    `$app = '${escapePowerShellSingleQuoted(currentExe)}'`,
+    `$targetPid = ${currentPid}`,
+    "while (Get-Process -Id $targetPid -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 350 }",
+    "Start-Process -FilePath $installer -ArgumentList '/S' -Wait",
+    "Start-Process -FilePath $app"
+  ].join('; ')
+
+  const helper = spawn('powershell.exe', [
+    '-NoProfile',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-WindowStyle',
+    'Hidden',
+    '-Command',
+    psScript
+  ], {
+    detached: true,
+    stdio: 'ignore'
+  })
+  helper.unref()
+
+  isQuitRequested = true
+  setTimeout(() => app.quit(), 120)
+  return { started: true, version: update.version }
 }
 
 function emit(channel, payload) {
@@ -5276,6 +5334,7 @@ ipcMain.handle('launcher:get-bootstrap', async () => getBootstrapPayload())
 ipcMain.handle('system:get-memory-profile', async () => getMemoryProfile())
 ipcMain.handle('system:get-storage-info', async (_event, targetPath) => getStorageInfo(targetPath))
 ipcMain.handle('launcher:check-update', async () => checkLauncherUpdate())
+ipcMain.handle('launcher:install-update', async () => installLauncherUpdate())
 ipcMain.handle('dialog:pick-folder', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openDirectory', 'createDirectory']
