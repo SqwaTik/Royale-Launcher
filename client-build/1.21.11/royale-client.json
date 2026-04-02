@@ -8,13 +8,13 @@
   "icon": "Grass",
   "managedMods": [
     {
-      "fileName": "royale-1.0.11.jar",
+      "fileName": "royale-1.0.12.jar",
       "source": {
         "type": "github-release-asset",
         "owner": "SqwaTik",
         "repo": "Royale-Launcher-Versions",
         "release": "v1.21.11",
-        "asset": "royale-1.0.11.jar",
+        "asset": "royale-1.0.12.jar",
         "tokenEnv": "ROYALE_GITHUB_TOKEN"
       }
     },
