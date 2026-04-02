@@ -12,7 +12,8 @@
       "tokenEnv": "ROYALE_GITHUB_TOKEN"
     },
     "notes": "Клиент Royale Master для Minecraft 1.21.11 с отдельной установкой и прямым запуском.",
-    "javaVersion": 21
+    "javaVersion": 21,
+    "clientRevision": "royale-1.0.13.jar"
   },
   {
     "versionName": "26.1",

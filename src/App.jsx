@@ -112,6 +112,8 @@ const DEFAULT_VERSION_STATE = {
   launchableFile: '',
   channel: '',
   notes: '',
+  updateAvailable: false,
+  clientRevision: '',
   gameplayStats: DEFAULT_GAMEPLAY_STATS,
   pendingInstall: null,
   running: false,
@@ -181,7 +183,7 @@ const DEFAULT_STATS_DASHBOARD = {
   recent: []
 }
 
-const DEFAULT_APP_VERSION = '1.0.1'
+const DEFAULT_APP_VERSION = '1.0.2'
 
 const HERO_FACTS = [
   'Факт Royale: хороший лаунчер должен исчезать в тень, а не мешать запуску мира.',
@@ -240,6 +242,7 @@ const TEXT = {
   openFolder: 'Открыть папку',
   chooseFolder: 'Выбрать папку',
   actionInstall: 'Скачать',
+  actionUpdate: 'Обновить',
   actionLaunch: 'Запустить',
   actionRunning: 'Запущено',
   actionUnavailable: 'Скоро',
@@ -604,6 +607,10 @@ function getVersionStateChip(entry, selectedVersion, versionState) {
 
   if (entry.versionName === selectedVersion && versionState.pendingInstall?.paused) {
     return { label: 'Пауза', tone: 'pending' }
+  }
+
+  if (entry.versionName === selectedVersion && versionState.installed && versionState.updateAvailable) {
+    return { label: TEXT.actionUpdate, tone: 'pending' }
   }
 
   if (entry.versionName === selectedVersion && versionState.installed) {
@@ -1443,7 +1450,7 @@ function App() {
       return
     }
 
-    const nextActionMode = versionState.installed ? 'launch' : 'install'
+    const nextActionMode = versionState.installed && !versionState.updateAvailable ? 'launch' : 'install'
 
     const currentDraft = draftRef.current
     const savedPlayerName = await commitPlayerNameDraft(currentDraft.playerName, { notify: false })
@@ -1451,7 +1458,7 @@ function App() {
       return
     }
 
-    if (versionState.installed) {
+    if (nextActionMode === 'launch') {
       const javaReady = await ensureJavaReadyForLaunch(selectedVersion)
       if (!javaReady) {
         return
@@ -1464,6 +1471,13 @@ function App() {
     if (!(nextActionMode === 'install' && hasPendingInstall)) {
       setInstallProgress(DEFAULT_PROGRESS)
     }
+
+    await new Promise((resolve) => {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(resolve)
+      })
+    })
+    await new Promise((resolve) => window.setTimeout(resolve, 28))
 
     try {
       if (nextActionMode === 'launch') {
@@ -1788,6 +1802,8 @@ function App() {
       ? 'Продолжить'
     : versionState.running
       ? TEXT.actionRunning
+      : versionState.updateAvailable
+        ? TEXT.actionUpdate
       : versionState.installed
         ? TEXT.actionLaunch
         : versionState.hasSource
@@ -1806,6 +1822,8 @@ function App() {
       ? progressStatusText || versionState.pendingInstall.statusMessage || 'Загрузка на паузе'
     : versionState.running
       ? `Minecraft уже запущен${versionState.runningPid ? ` · PID ${versionState.runningPid}` : ''}. Нажмите, чтобы закрыть лаунчер.`
+    : versionState.updateAvailable
+      ? 'Установит свежую сборку Royale Master поверх текущей версии'
     : versionState.installed
       ? 'Откроет профиль Royale Master'
       : versionState.hasSource

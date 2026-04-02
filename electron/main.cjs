@@ -265,6 +265,7 @@ const DEFAULT_VERSION_CATALOG = [
       tokenEnv: 'ROYALE_GITHUB_TOKEN'
     },
     javaVersion: 21,
+    clientRevision: 'royale-1.0.13.jar',
     notes: 'Клиент Royale Master для Minecraft 1.21.11 с отдельной установкой и прямым запуском.'
   },
   {
@@ -1231,7 +1232,8 @@ function normalizeCatalog(input) {
       title: String(item?.title ?? '').trim() || 'Royale Build',
       source: normalizeSourceDefinition(item?.source),
       notes: String(item?.notes ?? '').trim(),
-      javaVersion: Math.max(0, Number(item?.javaVersion) || 0)
+      javaVersion: Math.max(0, Number(item?.javaVersion) || 0),
+      clientRevision: String(item?.clientRevision || '').trim()
     }))
     .filter((item) => item.versionName)
     .filter((item, index, list) => list.findIndex((entry) => entry.versionName.toLowerCase() === item.versionName.toLowerCase()) === index)
@@ -1540,6 +1542,41 @@ function getManifestManagedMods(manifest) {
   return normalizeManagedModDefinitions(manifest?.managedMods)
 }
 
+function resolveManifestClientRevision(manifest) {
+  const managedMods = getManifestManagedMods(manifest)
+  if (managedMods.length === 0) {
+    return ''
+  }
+
+  const royaleJar = managedMods.find((entry) => /^royale-.*\.jar$/i.test(entry.fileName))
+  if (royaleJar?.fileName) {
+    return royaleJar.fileName
+  }
+
+  return managedMods
+    .map((entry) => String(entry.fileName || '').trim())
+    .filter(Boolean)
+    .sort((left, right) => left.localeCompare(right))
+    .join('|')
+}
+
+async function loadInstanceDescriptor(installDir) {
+  try {
+    return await readJsonFile(path.join(installDir, 'instance.json'))
+  } catch {
+    return null
+  }
+}
+
+function resolveInstalledClientRevision(instanceDescriptor, manifest) {
+  const descriptorRevision = String(instanceDescriptor?.clientRevision || '').trim()
+  if (descriptorRevision) {
+    return descriptorRevision
+  }
+
+  return resolveManifestClientRevision(manifest)
+}
+
 async function ensureManagedModsFromManifest(manifest, gameDir, options = {}) {
   const entries = getManifestManagedMods(manifest)
   if (entries.length === 0) {
@@ -1754,7 +1791,7 @@ async function ensureInstanceLink(installDir, settings, dirName) {
   await fsp.symlink(targetDir, linkPath, 'junction')
 }
 
-async function writeInstanceDescriptor(installDir, versionName, manifest) {
+async function writeInstanceDescriptor(installDir, versionName, manifest, options = {}) {
   const now = Date.now()
   const payload = {
     name: sanitizeVersionName(versionName),
@@ -1779,7 +1816,8 @@ async function writeInstanceDescriptor(installDir, versionName, manifest) {
     lastPlayedDate: 0,
     playtime: 0,
     creationDate: now,
-    path: installDir
+    path: installDir,
+    clientRevision: String(options.clientRevision || '').trim()
   }
 
   await fsp.writeFile(path.join(installDir, 'instance.json'), JSON.stringify(payload, null, 2), 'utf8')
@@ -1902,7 +1940,12 @@ async function prepareInstalledClientLayout(settings, installDir, versionName) {
   await Promise.all(SHARED_INSTANCE_LINKS.map(async (dirName) => {
     await ensureInstanceLink(installDir, settings, dirName)
   }))
-  await writeInstanceDescriptor(installDir, versionName, manifest)
+  const catalogEntry = Array.isArray(settings?.versions)
+    ? settings.versions.find((entry) => String(entry?.versionName || '').trim().toLowerCase() === String(versionName || '').trim().toLowerCase())
+    : null
+  await writeInstanceDescriptor(installDir, versionName, manifest, {
+    clientRevision: String(catalogEntry?.clientRevision || resolveManifestClientRevision(manifest) || '').trim()
+  })
 
   return {
     manifest,
@@ -1955,7 +1998,8 @@ async function inspectInstalledClient(installDir, versionName) {
 
       return {
         installed: requiredPaths.every(Boolean),
-        launchableFile: requiredPaths.find(Boolean) || ''
+        launchableFile: requiredPaths.find(Boolean) || '',
+        manifest
       }
     }
 
@@ -1972,7 +2016,8 @@ async function inspectInstalledClient(installDir, versionName) {
 
     return {
       installed: Boolean(royaleJar && fabricApiJar),
-      launchableFile: royaleJar || fabricApiJar || ''
+      launchableFile: royaleJar || fabricApiJar || '',
+      manifest
     }
   }
 
@@ -1981,7 +2026,8 @@ async function inspectInstalledClient(installDir, versionName) {
 
   return {
     installed,
-    launchableFile
+    launchableFile,
+    manifest
   }
 }
 
@@ -2201,6 +2247,7 @@ async function getVersionStateFromSettings(settings, versionName) {
   const version = settings.versions.find((entry) => entry.versionName === versionName) || settings.versions[0]
   const installDir = resolveVersionDirectory(settings, version.versionName)
   const installedClient = await inspectInstalledClient(installDir, version.versionName)
+  const instanceDescriptor = await loadInstanceDescriptor(installDir)
   const source = resolveSourceDescriptor(version.source)
   const runningClient = await getActiveRunningClientState()
   const pendingInstall = source.kind === 'remote' || source.kind === 'github-release-asset'
@@ -2208,6 +2255,13 @@ async function getVersionStateFromSettings(settings, versionName) {
     : null
   const running = Boolean(runningClient && runningClient.versionName.toLowerCase() === version.versionName.toLowerCase())
   const gameplayStats = await readGameplayStats(version.versionName, installDir)
+  const catalogRevision = String(version.clientRevision || '').trim()
+  const installedRevision = resolveInstalledClientRevision(instanceDescriptor, installedClient.manifest)
+  const updateAvailable = Boolean(
+    installedClient.installed
+      && catalogRevision
+      && catalogRevision !== installedRevision
+  )
 
   return {
     installDir,
@@ -2218,6 +2272,8 @@ async function getVersionStateFromSettings(settings, versionName) {
     title: version.title,
     channel: version.channel,
     notes: version.notes,
+    updateAvailable,
+    clientRevision: catalogRevision,
     gameplayStats: running ? gameplayStats : markGameplayStatsInactive(gameplayStats),
     pendingInstall,
     running,
