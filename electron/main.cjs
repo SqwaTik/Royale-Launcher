@@ -4187,16 +4187,47 @@ async function installLauncherUpdate() {
   const installerPath = path.join(updateDir, installerName)
   await downloadRemoteFile(update.url, installerPath)
 
+  const fallbackLaunchExe = path.join(path.dirname(app.getPath('exe')), 'Royale Launcher.exe')
   const currentExe = process.execPath
+  const launchExe = fs.existsSync(currentExe)
+    ? currentExe
+    : fallbackLaunchExe
   const currentPid = process.pid
+  const logPath = path.join(updateDir, 'update.log')
+  const scriptPath = path.join(updateDir, 'apply-update.ps1')
   const psScript = [
+    "$ErrorActionPreference = 'Stop'",
     `$installer = '${escapePowerShellSingleQuoted(installerPath)}'`,
-    `$app = '${escapePowerShellSingleQuoted(currentExe)}'`,
+    `$app = '${escapePowerShellSingleQuoted(launchExe)}'`,
     `$targetPid = ${currentPid}`,
-    "while (Get-Process -Id $targetPid -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 350 }",
-    "Start-Process -FilePath $installer -ArgumentList '/S' -Wait",
-    "Start-Process -FilePath $app"
-  ].join('; ')
+    `$log = '${escapePowerShellSingleQuoted(logPath)}'`,
+    'function Write-UpdateLog([string]$message) {',
+    '  $timestamp = Get-Date -Format o',
+    '  Add-Content -LiteralPath $log -Value "$timestamp $message"',
+    '}',
+    'try {',
+    '  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $log) | Out-Null',
+    "  Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue",
+    "  [Environment]::SetEnvironmentVariable('ELECTRON_RUN_AS_NODE', $null, 'Process')",
+    "  Write-UpdateLog 'helper-started'",
+    "  while (Get-Process -Id $targetPid -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 350 }",
+    "  Write-UpdateLog 'launcher-exited'",
+    "  $installerProcess = Start-Process -FilePath $installer -ArgumentList '/S' -PassThru",
+    '  Wait-Process -Id $installerProcess.Id',
+    "  Write-UpdateLog ('installer-exit-' + $installerProcess.ExitCode)",
+    '  Start-Sleep -Milliseconds 900',
+    "  Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue",
+    "  [Environment]::SetEnvironmentVariable('ELECTRON_RUN_AS_NODE', $null, 'Process')",
+    '  if (-not (Test-Path -LiteralPath $app)) { throw "app-not-found: $app" }',
+    '  Start-Process -FilePath $app -WorkingDirectory (Split-Path -Parent $app)',
+    "  Write-UpdateLog 'launcher-restarted'",
+    '} catch {',
+    "  Write-UpdateLog ('error: ' + $_.Exception.Message)",
+    '}'
+  ].join('\r\n')
+
+  await fsp.mkdir(updateDir, { recursive: true })
+  await fsp.writeFile(scriptPath, psScript, 'utf8')
 
   const helper = spawn('powershell.exe', [
     '-NoProfile',
@@ -4204,11 +4235,12 @@ async function installLauncherUpdate() {
     'Bypass',
     '-WindowStyle',
     'Hidden',
-    '-Command',
-    psScript
+    '-File',
+    scriptPath
   ], {
     detached: true,
-    stdio: 'ignore'
+    stdio: 'ignore',
+    windowsHide: true
   })
   helper.unref()
 

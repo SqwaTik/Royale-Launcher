@@ -4021,17 +4021,19 @@ input {
 
 .feature-stage__overlay {
   gap: 8px;
-  padding: 14px 12px 20px 6px;
+  padding: 14px 12px 14px;
 }
 
 .feature-stage__panel {
-  width: min(448px, calc(100% - 6px));
+  width: 100%;
+  max-width: 100%;
   gap: 7px;
-  padding: 12px 12px 18px;
-  margin-top: 6px;
+  padding: 12px 12px 14px;
+  margin-top: 2px;
   margin-right: 0;
-  margin-bottom: 2px;
+  margin-bottom: 0;
   margin-left: 0;
+  align-self: stretch;
   overflow: hidden;
 }
 
@@ -4101,20 +4103,20 @@ input {
 .feature-detail__input {
   width: 100%;
   box-sizing: border-box;
-  min-height: 48px;
+  min-height: 46px;
   padding: 0 18px;
   border-radius: 18px;
   font-size: 14px;
 }
 
 .feature-stage__action-shell {
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 .feature-stage__action-shell .primary-action {
-  width: calc(100% - 10px);
-  margin-inline: 5px;
-  min-height: 66px;
+  width: 100%;
+  margin-inline: 0;
+  min-height: 64px;
   padding: 0 22px;
   border-radius: 26px;
 }
