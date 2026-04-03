@@ -4158,7 +4158,7 @@ input {
 }
 
 .feature-stage {
-  align-self: start;
+  align-self: end;
   min-height: auto;
   height: auto;
   width: 100%;
