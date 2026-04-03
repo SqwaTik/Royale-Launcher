@@ -183,7 +183,7 @@ const DEFAULT_STATS_DASHBOARD = {
   recent: []
 }
 
-const DEFAULT_APP_VERSION = '1.0.6'
+const DEFAULT_APP_VERSION = '1.0.7'
 
 const HERO_FACTS = [
   'Факт Royale: хороший лаунчер должен исчезать в тень, а не мешать запуску мира.',

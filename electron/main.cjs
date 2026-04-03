@@ -265,7 +265,7 @@ const DEFAULT_VERSION_CATALOG = [
       tokenEnv: 'ROYALE_GITHUB_TOKEN'
     },
     javaVersion: 21,
-    clientRevision: 'royale-1.0.14.jar',
+    clientRevision: 'royale-1.0.14-r1',
     notes: 'Клиент Royale Master для Minecraft 1.21.11 с отдельной установкой и прямым запуском.'
   },
   {
@@ -1582,6 +1582,7 @@ async function ensureManagedModsFromManifest(manifest, gameDir, options = {}) {
 
   const installStage = options.stage === 'install'
   const downloadMissing = options.downloadMissing !== false
+  const forceDownload = options.forceDownload === true
   const reportProgress = (label, progressPayload = {}) => {
     const message = String(label || '').trim()
     if (!message) {
@@ -1621,7 +1622,7 @@ async function ensureManagedModsFromManifest(manifest, gameDir, options = {}) {
   let completed = 0
   for (const entry of entries) {
     const targetPath = path.join(managedModsDir, entry.fileName)
-    if (!fs.existsSync(targetPath)) {
+    if (!fs.existsSync(targetPath) || forceDownload) {
       if (!downloadMissing) {
         throw new Error(`Не найден managed-мод ${entry.fileName}. Переустановите клиент и попробуйте снова.`)
       }
@@ -1629,6 +1630,10 @@ async function ensureManagedModsFromManifest(manifest, gameDir, options = {}) {
       const source = resolveSourceDescriptor(entry.source)
       if (source.kind === 'none') {
         throw new Error(`Для managed-мода ${entry.fileName} не настроен источник.`)
+      }
+
+      if (forceDownload && fs.existsSync(targetPath)) {
+        await fsp.rm(targetPath, { force: true })
       }
 
       if (source.kind === 'local') {
@@ -4099,7 +4104,7 @@ async function prepareClientProfile(settings, versionName, installDir) {
   }
 
   await ensureManagedClientRuntime(settings, versionName, preparedClient.manifest, { stage: 'install' })
-  await ensureManagedModsFromManifest(preparedClient.manifest, preparedClient.gameDir, { stage: 'install' })
+  await ensureManagedModsFromManifest(preparedClient.manifest, preparedClient.gameDir, { stage: 'install', forceDownload: true })
   await fsp.writeFile(getClientManifestPath(installDir), JSON.stringify(preparedClient.manifest, null, 2), 'utf8')
   await syncSharedRuntimeToMinecraftHome(settings, preparedClient.manifest)
   const versionId = await ensureFabricVersionProfile(settings, preparedClient.manifest)
