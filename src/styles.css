@@ -4156,3 +4156,84 @@ input {
 .stats-context__row {
   padding: 7px 0;
 }
+
+.feature-stage {
+  align-self: start;
+  min-height: auto;
+  height: auto;
+  width: 100%;
+  max-width: 510px;
+}
+
+.feature-stage__overlay {
+  flex: 0 0 auto;
+  justify-content: flex-start;
+  padding: 14px 14px 12px;
+}
+
+.feature-stage__panel {
+  flex: 0 0 auto;
+  width: min(100%, 486px);
+  min-height: auto;
+  height: auto;
+  margin-top: 0;
+  margin-bottom: 0;
+  padding: 12px 14px 12px;
+  gap: 10px;
+}
+
+.feature-stage__details {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.feature-detail--wide,
+.feature-detail--player,
+.feature-detail__input {
+  width: 100%;
+}
+
+.feature-stage__action-shell {
+  margin-top: 4px;
+}
+
+.feature-stage__action-shell .primary-action {
+  min-height: 58px;
+  padding: 0 18px;
+  border-radius: 22px;
+}
+
+.feature-stage__visual {
+  min-height: 82px;
+  flex: 0 0 82px;
+}
+
+.feature-stage__header {
+  gap: 5px;
+}
+
+.feature-stage__lead {
+  font-size: 11.75px;
+  line-height: 1.5;
+}
+
+.feature-detail {
+  padding: 11px 14px;
+}
+
+.feature-detail__input {
+  min-height: 44px;
+  padding: 0 16px;
+}
+
+.feature-stage__action-shell .primary-action__title {
+  font-size: 15px;
+}
+
+.feature-stage__action-shell .primary-action__meta {
+  font-size: 10.5px;
+}
+
+.feature-stage__busy-actions {
+  right: 12px;
+}

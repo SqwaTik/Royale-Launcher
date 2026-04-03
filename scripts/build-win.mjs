@@ -237,7 +237,9 @@ function syncBuildOutputs(currentMode) {
     try {
       mkdirSync(installedDir, { recursive: true })
       cpSync(unpackedDir, installedDir, { recursive: true, force: true })
-      patchWindowsExecutable(path.join(installedDir, 'Royale Launcher.exe'))
+      const installedExe = path.join(installedDir, 'Royale Launcher.exe')
+      patchWindowsExecutable(installedExe)
+      syncShortcuts(installedExe)
       cleanupLegacyInstall()
     } catch (error) {
       console.warn(`[build-win] Skipped installed copy sync: ${error.message}`)
