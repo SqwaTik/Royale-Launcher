@@ -4159,10 +4159,11 @@ input {
 
 .feature-stage {
   align-self: end;
+  justify-self: stretch;
   min-height: auto;
   height: auto;
   width: 100%;
-  max-width: 510px;
+  max-width: none;
 }
 
 .feature-stage__overlay {
@@ -4173,7 +4174,8 @@ input {
 
 .feature-stage__panel {
   flex: 0 0 auto;
-  width: min(100%, 486px);
+  width: 100%;
+  max-width: none;
   min-height: auto;
   height: auto;
   margin-top: 0;
@@ -4195,6 +4197,7 @@ input {
 
 .feature-stage__action-shell {
   margin-top: 4px;
+  width: 100%;
 }
 
 .feature-stage__action-shell .primary-action {
@@ -4222,6 +4225,7 @@ input {
 }
 
 .feature-detail__input {
+  display: block;
   min-height: 44px;
   padding: 0 16px;
 }
