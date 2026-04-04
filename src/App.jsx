@@ -183,7 +183,7 @@ const DEFAULT_STATS_DASHBOARD = {
   recent: []
 }
 
-const DEFAULT_APP_VERSION = '1.0.10'
+const DEFAULT_APP_VERSION = '1.0.11'
 
 const HERO_FACTS = [
   'Факт Royale: хороший лаунчер должен исчезать в тень, а не мешать запуску мира.',
@@ -856,6 +856,21 @@ function App() {
   }, [activeToast])
 
   useEffect(() => {
+    const preloaders = Object.values(VERSION_ART_IMAGES).map((source) => {
+      const image = new Image()
+      image.decoding = 'async'
+      image.src = source
+      return image
+    })
+
+    return () => {
+      for (const image of preloaders) {
+        image.src = ''
+      }
+    }
+  }, [])
+
+  useEffect(() => {
     const nextImage = showVersionArt ? selectedArt.image : ''
     const nextPosition = selectedArt.position || 'center center'
 
@@ -1433,14 +1448,18 @@ function App() {
   }
 
   async function selectVersion(nextVersion) {
-    if (busy) return
+    if (busy || nextVersion === selectedVersion) return
     setStatusText('')
-    setSelectedVersion(nextVersion)
+    startTransition(() => {
+      setSelectedVersion(nextVersion)
+    })
     const nextSettings = { ...settingsRef.current, lastSelectedVersion: nextVersion }
     settingsRef.current = nextSettings
-    setSettings(nextSettings)
-    await api.saveSettings(nextSettings)
-    await refreshVersionState(nextVersion)
+    startTransition(() => {
+      setSettings(nextSettings)
+    })
+    void api.saveSettings(nextSettings).catch(() => {})
+    void refreshVersionState(nextVersion).catch(() => {})
   }
 
   async function handlePrimaryAction() {

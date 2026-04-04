@@ -4184,95 +4184,77 @@ input {
   gap: 10px;
 }
 
-.feature-stage__details {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
-}
-
-.feature-detail--wide,
-.feature-detail--player,
-.feature-detail__input {
-  width: 100%;
-}
-
-.feature-stage__action-shell {
-  margin-top: 4px;
-  width: 100%;
-}
-
-.feature-stage__action-shell .primary-action {
-  min-height: 58px;
-  padding: 0 18px;
-  border-radius: 22px;
-}
-
-.feature-stage__visual {
-  min-height: 82px;
-  flex: 0 0 82px;
-}
-
-.feature-stage__header {
-  gap: 5px;
-}
-
-.feature-stage__lead {
-  font-size: 11.75px;
-  line-height: 1.5;
-}
-
-.feature-detail {
-  padding: 11px 14px;
-}
-
-.feature-detail__input {
-  display: block;
-  min-height: 44px;
-  padding: 0 16px;
-}
-
-.feature-stage__action-shell .primary-action__title {
-  font-size: 15px;
-}
-
-.feature-stage__action-shell .primary-action__meta {
-  font-size: 10.5px;
-}
-
-.feature-stage__busy-actions {
-  right: 12px;
-}
-
 .hero {
-  grid-template-columns: minmax(520px, 1.08fr) minmax(520px, 0.92fr);
-  align-items: stretch;
+  grid-template-columns: minmax(540px, 1.04fr) minmax(540px, 0.96fr) !important;
+  align-items: start !important;
+}
+
+.hero__column--main {
+  min-height: 0 !important;
+}
+
+.version-dock {
+  margin-bottom: 0 !important;
 }
 
 .feature-stage {
-  justify-self: stretch;
-  align-self: end;
-  width: 100%;
-  min-width: 0;
-  max-width: none;
+  justify-self: stretch !important;
+  align-self: end !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  min-height: 0 !important;
+  height: auto !important;
 }
 
 .feature-stage__overlay {
-  min-height: 100%;
-  padding: 14px 14px 14px;
+  min-height: 0 !important;
+  padding: 16px 16px 14px !important;
+  gap: 10px !important;
 }
 
 .feature-stage__panel {
-  width: 100%;
-  min-width: 0;
-  max-width: none;
-  margin: 0;
-  padding: 12px 14px 14px;
-  gap: 10px;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 14px 16px 16px !important;
+  gap: 10px !important;
+  flex: 0 0 auto !important;
+  overflow: hidden !important;
+}
+
+.feature-stage__visual {
+  min-height: 88px !important;
+  flex: 0 0 88px !important;
+}
+
+.feature-stage__header {
+  gap: 5px !important;
+}
+
+.feature-stage__lead {
+  font-size: 11.8px !important;
+  line-height: 1.5 !important;
+}
+
+.feature-stage__fact-inline {
+  min-height: 30px !important;
+}
+
+.feature-stage__fact-text {
+  min-height: 28px !important;
 }
 
 .feature-stage__details {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 10px !important;
+}
+
+.feature-detail {
+  padding: 11px 14px !important;
 }
 
 .feature-detail--wide,
@@ -4280,26 +4262,41 @@ input {
 .feature-detail__input,
 .feature-stage__action-shell,
 .feature-stage__action-shell .primary-action {
-  width: 100%;
-  min-width: 0;
+  width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
 }
 
 .feature-detail--player {
-  padding: 0;
+  padding: 0 !important;
+  min-height: 0 !important;
 }
 
 .feature-detail__input {
-  display: block;
-  min-height: 46px;
-  padding: 0 18px;
+  display: block !important;
+  min-height: 46px !important;
+  padding: 0 18px !important;
 }
 
 .feature-stage__action-shell {
-  margin-top: 4px;
+  margin-top: 6px !important;
 }
 
 .feature-stage__action-shell .primary-action {
-  margin-inline: 0;
-  min-height: 58px;
-  padding: 0 18px;
+  margin-inline: 0 !important;
+  min-height: 60px !important;
+  padding: 0 20px !important;
+  border-radius: 24px !important;
+}
+
+.feature-stage__action-shell .primary-action__title {
+  font-size: 15px !important;
+}
+
+.feature-stage__action-shell .primary-action__meta {
+  font-size: 10.5px !important;
+}
+
+.feature-stage__busy-actions {
+  right: 12px !important;
 }
