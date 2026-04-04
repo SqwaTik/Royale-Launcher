@@ -4241,3 +4241,65 @@ input {
 .feature-stage__busy-actions {
   right: 12px;
 }
+
+.hero {
+  grid-template-columns: minmax(520px, 1.08fr) minmax(520px, 0.92fr);
+  align-items: stretch;
+}
+
+.feature-stage {
+  justify-self: stretch;
+  align-self: end;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
+
+.feature-stage__overlay {
+  min-height: 100%;
+  padding: 14px 14px 14px;
+}
+
+.feature-stage__panel {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  margin: 0;
+  padding: 12px 14px 14px;
+  gap: 10px;
+}
+
+.feature-stage__details {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.feature-detail--wide,
+.feature-detail--player,
+.feature-detail__input,
+.feature-stage__action-shell,
+.feature-stage__action-shell .primary-action {
+  width: 100%;
+  min-width: 0;
+}
+
+.feature-detail--player {
+  padding: 0;
+}
+
+.feature-detail__input {
+  display: block;
+  min-height: 46px;
+  padding: 0 18px;
+}
+
+.feature-stage__action-shell {
+  margin-top: 4px;
+}
+
+.feature-stage__action-shell .primary-action {
+  margin-inline: 0;
+  min-height: 58px;
+  padding: 0 18px;
+}
