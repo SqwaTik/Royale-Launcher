@@ -7,6 +7,100 @@ const { spawn } = require('child_process')
 const { spawnSync } = require('child_process')
 const { pathToFileURL } = require('url')
 
+function getDefaultInstallFolder() {
+  return process.platform === 'win32' ? 'C:\\Royale' : path.join(os.homedir(), 'Royale')
+}
+
+const LAUNCHER_DATA_DIR = '.royale'
+const LEGACY_APPDATA_DIR_NAMES = ['royale-launcher', 'Royale Launcher', 'royale-launcher-electron']
+
+function parseEarlyArgvValue(prefix) {
+  for (const arg of process.argv) {
+    const text = String(arg || '')
+    if (text.startsWith(prefix)) {
+      return text.slice(prefix.length)
+    }
+  }
+  return ''
+}
+
+function tryReadInstallFolderFromSettingsFile(settingsPath) {
+  try {
+    if (!fs.existsSync(settingsPath)) {
+      return ''
+    }
+    const raw = fs.readFileSync(settingsPath, 'utf8')
+    const parsed = JSON.parse(raw)
+    return String(parsed.installFolder || '').trim()
+  } catch {
+    return ''
+  }
+}
+
+function bootstrapResolveInstallRoot() {
+  const smokeRoot = parseEarlyArgvValue('--smoke-install-root=')
+  if (smokeRoot && process.argv.some((entry) => String(entry || '').startsWith('--smoke-test='))) {
+    return path.resolve(smokeRoot)
+  }
+
+  try {
+    const appData = app.getPath('appData')
+    for (const dirName of LEGACY_APPDATA_DIR_NAMES) {
+      const settingsPath = path.join(appData, dirName, 'launcher-settings.json')
+      const folder = tryReadInstallFolderFromSettingsFile(settingsPath)
+      if (folder) {
+        return path.resolve(folder)
+      }
+    }
+  } catch {}
+
+  const coLocatedSettings = path.join(path.resolve(getDefaultInstallFolder()), LAUNCHER_DATA_DIR, 'launcher-settings.json')
+  const fromCoLocated = tryReadInstallFolderFromSettingsFile(coLocatedSettings)
+  if (fromCoLocated) {
+    return path.resolve(fromCoLocated)
+  }
+
+  return path.resolve(getDefaultInstallFolder())
+}
+
+function findExistingLauncherUserDataDirectory() {
+  try {
+    const appData = app.getPath('appData')
+    for (const dirName of LEGACY_APPDATA_DIR_NAMES) {
+      const base = path.join(appData, dirName)
+      if (fs.existsSync(path.join(base, 'launcher-settings.json'))) {
+        return base
+      }
+    }
+  } catch {}
+
+  const coLocated = path.join(path.resolve(getDefaultInstallFolder()), LAUNCHER_DATA_DIR)
+  if (fs.existsSync(path.join(coLocated, 'launcher-settings.json'))) {
+    return coLocated
+  }
+
+  return ''
+}
+
+function resolveRoyaleUserDataPath() {
+  const fromEnv = String(process.env.ROYALE_USERDATA || '').trim()
+  if (fromEnv) {
+    return path.resolve(fromEnv)
+  }
+
+  const fromArg = parseEarlyArgvValue('--royale-user-data=')
+  if (fromArg) {
+    return path.resolve(fromArg)
+  }
+
+  const existing = findExistingLauncherUserDataDirectory()
+  if (existing) {
+    return existing
+  }
+
+  return path.join(bootstrapResolveInstallRoot(), LAUNCHER_DATA_DIR)
+}
+
 let mainWindow = null
 let tray = null
 let installInFlight = false
@@ -31,7 +125,6 @@ let javaInstallInFlight = null
 const jsonFileCache = new Map()
 
 const APP_ID = 'com.royale.launcher'
-const APP_STORAGE_DIR = 'royale-launcher'
 const BUNDLED_VERSION_CATALOG_PATH = path.join(__dirname, 'version-catalog.json')
 const BUNDLED_LAUNCHER_CONFIG_PATH = path.join(__dirname, 'launcher-config.json')
 const MAX_STATS_EVENTS = 4000
@@ -46,7 +139,7 @@ const RUNTIME_DOWNLOAD_CONCURRENCY = 8
 
 Menu.setApplicationMenu(null)
 app.setName('Royale Launcher')
-app.setPath('userData', path.join(app.getPath('appData'), APP_STORAGE_DIR))
+app.setPath('userData', resolveRoyaleUserDataPath())
 if (process.platform === 'win32') {
   app.setAppUserModelId(APP_ID)
 }
@@ -89,10 +182,6 @@ function getYauzlModule() {
   }
 
   return yauzlModule
-}
-
-function getDefaultInstallFolder() {
-  return process.platform === 'win32' ? 'C:\\Royale' : path.join(os.homedir(), 'Royale')
 }
 
 const PLAYER_NAME_PATTERN = /^[A-Za-z0-9_]{1,16}$/
@@ -311,7 +400,7 @@ const DEFAULT_VERSION_CATALOG = [
 const CLIENT_MANIFEST_FILE = 'royale-client.json'
 const CLIENT_GAME_DIRS = ['mods', 'config', 'resourcepacks', 'shaderpacks', 'saves', 'screenshots']
 const CLIENT_GAME_FILES = ['options.txt', 'optionsof.txt', 'servers.dat']
-const SHARED_MINECRAFT_DIRS = ['instances', 'versions', 'libraries', 'assets', 'jre']
+const SHARED_MINECRAFT_DIRS = ['versions', 'libraries', 'assets', 'jre']
 const PACKAGED_SHARED_RUNTIME_DIRS = ['versions', 'libraries', 'assets', 'jre']
 const SHARED_INSTANCE_LINKS = ['versions', 'libraries']
 const SHARED_MINECRAFT_FILES = ['authlib-injection.json', 'launcher_profiles.json']
@@ -648,9 +737,8 @@ function getKnownUserDataDirectories() {
   const appDataRoot = app.getPath('appData')
   return [...new Set([
     app.getPath('userData'),
-    path.join(appDataRoot, APP_STORAGE_DIR),
-    path.join(appDataRoot, 'Royale Launcher'),
-    path.join(appDataRoot, 'royale-launcher-electron')
+    ...LEGACY_APPDATA_DIR_NAMES.map((dirName) => path.join(appDataRoot, dirName)),
+    path.join(path.resolve(getDefaultInstallFolder()), LAUNCHER_DATA_DIR)
   ])]
 }
 
@@ -1332,6 +1420,10 @@ async function loadSettings() {
   return settingsCache
 }
 
+function buildRelaunchArgvWithoutRoyaleSwitch() {
+  return process.argv.slice(1).filter((arg) => !String(arg || '').startsWith('--royale-user-data='))
+}
+
 async function saveSettings(nextSettings) {
   await ensureVersionCatalog()
   const catalog = await loadVersionCatalog()
@@ -1346,6 +1438,26 @@ async function saveSettings(nextSettings) {
     hideLauncherOnGameLaunch: normalized.hideLauncherOnGameLaunch,
     reopenLauncherOnGameExit: normalized.reopenLauncherOnGameExit,
     skipCancelConfirm: normalized.skipCancelConfirm
+  }
+
+  const previous = settingsCache
+  const oldInstall = previous ? resolveInstallRoot(previous) : ''
+  const newInstall = resolveInstallRoot(normalized)
+
+  if (previous && oldInstall && path.resolve(oldInstall) !== path.resolve(newInstall)) {
+    const newUserData = path.join(newInstall, LAUNCHER_DATA_DIR)
+    await fsp.mkdir(newUserData, { recursive: true })
+    const oldUserData = app.getPath('userData')
+    if (path.resolve(oldUserData) !== path.resolve(newUserData)) {
+      try {
+        await fsp.cp(oldUserData, newUserData, { recursive: true, force: true })
+      } catch {}
+    }
+    await fsp.writeFile(path.join(newUserData, 'launcher-settings.json'), JSON.stringify(payload, null, 2), 'utf8')
+    settingsCache = normalized
+    app.relaunch({ args: buildRelaunchArgvWithoutRoyaleSwitch().concat([`--royale-user-data=${newUserData}`]) })
+    app.exit(0)
+    return normalized
   }
 
   await fsp.mkdir(path.dirname(getSettingsPath()), { recursive: true })
@@ -1363,11 +1475,47 @@ function resolveSharedDirectory(settings, dirName) {
 }
 
 function resolveInstancesDirectory(settings) {
-  return resolveSharedDirectory(settings, 'instances')
+  return resolveInstallRoot(settings)
 }
 
 function resolveVersionDirectory(settings, versionName) {
-  return path.join(resolveInstancesDirectory(settings), sanitizeVersionName(versionName))
+  return path.join(resolveInstallRoot(settings), sanitizeVersionName(versionName))
+}
+
+async function migrateLegacyInstancesLayout(settings) {
+  const root = resolveInstallRoot(settings)
+  const legacy = path.join(root, 'instances')
+  if (!fs.existsSync(legacy)) {
+    return
+  }
+
+  let entries
+  try {
+    entries = await fsp.readdir(legacy, { withFileTypes: true })
+  } catch {
+    return
+  }
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue
+    }
+    const from = path.join(legacy, entry.name)
+    const to = path.join(root, entry.name)
+    if (fs.existsSync(to)) {
+      continue
+    }
+    try {
+      await fsp.rename(from, to)
+    } catch {}
+  }
+
+  try {
+    const left = await fsp.readdir(legacy)
+    if (left.length === 0) {
+      await fsp.rm(legacy, { recursive: true, force: true })
+    }
+  } catch {}
 }
 
 function getDefaultClientManifest(versionName) {
@@ -5419,6 +5567,11 @@ app.whenReady().then(async () => {
 
   await migrateLegacyUserData().catch(() => {})
   cleanupLegacyInstallDirectory().catch(() => {})
+
+  try {
+    const layoutSettings = await loadSettings()
+    await migrateLegacyInstancesLayout(layoutSettings)
+  } catch {}
 
   if (cli.smokeTestVersion) {
     try {
