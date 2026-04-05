@@ -183,7 +183,7 @@ const DEFAULT_STATS_DASHBOARD = {
   recent: []
 }
 
-const DEFAULT_APP_VERSION = '1.0.11'
+const DEFAULT_APP_VERSION = '1.0.12'
 
 const HERO_FACTS = [
   'Факт Royale: хороший лаунчер должен исчезать в тень, а не мешать запуску мира.',
@@ -1369,7 +1369,7 @@ function App() {
   }
 
   async function ensureJavaReadyForLaunch(versionName) {
-    const javaStatus = await api.getJavaStatus(versionName)
+    let javaStatus = await api.getJavaStatus(versionName)
     if (javaStatus?.available) {
       return true
     }
@@ -1386,11 +1386,33 @@ function App() {
       return false
     }
 
+    setStatusText(`Скачиваю Java ${requiredJavaVersion} (Adoptium)...`)
+    try {
+      await api.installJava(versionName)
+      javaStatus = await api.getJavaStatus(versionName)
+      if (javaStatus?.available) {
+        enqueueToast({
+          title: `Java ${requiredJavaVersion} готова`,
+          message: 'Runtime скачан и распакован автоматически'
+        }, 'success', `java-auto-${requiredJavaVersion}`)
+        setStatusText('')
+        return true
+      }
+    } catch (error) {
+      const message = normalizeRemoteErrorMessage(error?.message)
+      enqueueToast({
+        title: 'Не удалось скачать Java',
+        message: message || 'Проверьте сеть и попробуйте снова'
+      }, 'error', `java-auto-fail-${requiredJavaVersion}`)
+    }
+
+    setStatusText('')
     setJavaPrompt({
       ...DEFAULT_JAVA_PROMPT,
       visible: true,
       versionName,
-      requiredJavaVersion
+      requiredJavaVersion,
+      status: 'Повторите установку вручную'
     })
     return false
   }

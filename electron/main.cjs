@@ -384,7 +384,7 @@ const DEFAULT_VERSION_CATALOG = [
       asset: '1.16.5.zip',
       tokenEnv: 'ROYALE_GITHUB_TOKEN'
     },
-    javaVersion: 8,
+    javaVersion: 17,
     clientRevision: 'royale-1.0.14-1.16.5',
     notes: 'Клиент Royale Master для Minecraft 1.16.5 (Fabric).'
   },
@@ -456,7 +456,7 @@ const DEFAULT_CLIENT_MANIFESTS = {
     fabricLoaderVersion: '0.18.4',
     gameDir: '.',
     icon: 'Grass',
-    javaVersion: 8
+    javaVersion: 17
   },
   '1.12.2': {
     type: 'fabric-instance',
@@ -2525,6 +2525,10 @@ function inferJavaVersionFromMinecraftVersion(minecraftVersion) {
     return 16
   }
 
+  if (minor === 16) {
+    return 17
+  }
+
   return 8
 }
 
@@ -2608,7 +2612,8 @@ function isJavaExecutableCompatible(executablePath, requiredJavaVersion) {
     return Boolean(executablePath && fs.existsSync(executablePath))
   }
 
-  return getJavaExecutableMajorVersion(executablePath) === required
+  const major = getJavaExecutableMajorVersion(executablePath)
+  return major >= required
 }
 
 function normalizeMemoryStep(value, minimum = 2048) {
@@ -3222,13 +3227,28 @@ function getSystemJavaLookupCommand() {
 }
 
 function findCompatibleJavaInText(rawText, requiredJavaVersion) {
+  const required = Math.max(0, Number(requiredJavaVersion) || 0)
   const candidates = String(rawText || '')
     .split(/\r?\n/)
     .map((item) => item.trim())
     .filter(Boolean)
     .filter((candidate) => fs.existsSync(candidate))
 
-  return candidates.find((candidate) => isJavaExecutableCompatible(candidate, requiredJavaVersion)) || ''
+  if (!required) {
+    return candidates[0] || ''
+  }
+
+  let bestPath = ''
+  let bestMajor = 0
+  for (const candidate of candidates) {
+    const major = getJavaExecutableMajorVersion(candidate)
+    if (major >= required && major > bestMajor) {
+      bestMajor = major
+      bestPath = candidate
+    }
+  }
+
+  return bestPath
 }
 
 async function resolveJavaStatus(settings, versionName, manifest = null) {
@@ -3293,12 +3313,28 @@ async function resolveJavaStatus(settings, versionName, manifest = null) {
 }
 
 async function resolveJavaExecutable(settings, versionName, manifest = null) {
-  const status = await resolveJavaStatus(settings, versionName, manifest)
+  let status = await resolveJavaStatus(settings, versionName, manifest)
   if (status.available && status.javaExecutable) {
     return status.javaExecutable
   }
 
-  throw new Error(`Java ${status.requiredJavaVersion || 21} не найден. Скачайте подходящий runtime и попробуйте снова.`)
+  try {
+    await installJavaRuntime(settings, versionName, manifest)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error || '')
+    throw new Error(
+      message
+        ? `Не удалось установить Java ${status.requiredJavaVersion || 21}: ${message}`
+        : `Java ${status.requiredJavaVersion || 21} не найдена и не удалось скачать автоматически.`
+    )
+  }
+
+  status = await resolveJavaStatus(settings, versionName, manifest)
+  if (status.available && status.javaExecutable) {
+    return status.javaExecutable
+  }
+
+  throw new Error(`Java ${status.requiredJavaVersion || 21} не найдена после автоустановки.`)
 }
 
 async function resolveAdoptiumRuntimePackage(requiredJavaVersion) {
@@ -3558,8 +3594,14 @@ async function ensureManagedClientRuntime(settings, versionName, manifest, optio
     inheritsFrom: minecraftVersion
   }
 
+  const catalogJavaHint = Math.max(0, Number(resolveCatalogEntry(settings, versionName)?.javaVersion) || 0)
   if (!manifest.javaVersion && baseProfile?.javaVersion?.majorVersion) {
-    manifest.javaVersion = Math.max(0, Number(baseProfile.javaVersion.majorVersion) || 0)
+    manifest.javaVersion = Math.max(
+      Math.max(0, Number(baseProfile.javaVersion.majorVersion) || 0),
+      catalogJavaHint
+    )
+  } else if (!manifest.javaVersion && catalogJavaHint) {
+    manifest.javaVersion = catalogJavaHint
   }
 
   if (!fs.existsSync(fabricVersionJsonPath)) {
@@ -4273,37 +4315,53 @@ async function prepareClientProfile(settings, versionName, installDir) {
   }
 }
 
+const DEFAULT_LAUNCHER_UPDATE_REPO = 'SqwaTik/Royale-Launcher'
+
+function buildGitHubApiHeaders() {
+  const headers = {
+    Accept: 'application/vnd.github+json',
+    'User-Agent': String(APP_NETWORK_HEADERS['User-Agent'] || APP_ID || 'RoyaleLauncher'),
+    'X-GitHub-Api-Version': '2022-11-28'
+  }
+  const token = String(process.env.GITHUB_TOKEN || process.env.GH_TOKEN || process.env.ROYALE_GITHUB_TOKEN || '').trim()
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+  return headers
+}
+
 async function checkLauncherUpdate() {
   const launcherConfig = await loadLauncherConfig()
   const currentVersion = app.getVersion()
-
-  if (!launcherConfig.updateRepo) {
-    return {
-      available: false,
-      version: '',
-      url: launcherConfig.releasePage || '',
-      currentVersion
-    }
-  }
+  const updateRepo = String(launcherConfig.updateRepo || DEFAULT_LAUNCHER_UPDATE_REPO).trim() || DEFAULT_LAUNCHER_UPDATE_REPO
 
   try {
-    const response = await fetch(`https://api.github.com/repos/${launcherConfig.updateRepo}/releases/latest`, {
-      headers: {
-        'Accept': 'application/vnd.github+json',
-        'User-Agent': APP_ID
-      }
+    const response = await fetch(`https://api.github.com/repos/${updateRepo}/releases/latest`, {
+      headers: buildGitHubApiHeaders()
     })
 
     if (!response.ok) {
-      return { available: false, version: '', url: launcherConfig.releasePage || '', currentVersion }
+      return {
+        available: false,
+        version: '',
+        url: launcherConfig.releasePage || '',
+        pageUrl: launcherConfig.releasePage || '',
+        assetName: '',
+        currentVersion
+      }
     }
 
     const release = await response.json()
     const latestVersion = stripVersionPrefix(release.tag_name || release.name || '')
     const htmlUrl = String(release.html_url || launcherConfig.releasePage || '').trim()
     const assets = Array.isArray(release?.assets) ? release.assets : []
-    const installerAsset = assets.find((asset) => String(asset?.name || '').toLowerCase() === 'royalelauncherinstaller.exe')
-      || assets.find((asset) => String(asset?.name || '').toLowerCase().endsWith('.exe'))
+    const lowerName = (asset) => String(asset?.name || '').toLowerCase()
+    const installerAsset = assets.find((asset) => lowerName(asset) === 'royalelauncherinstaller.exe')
+      || assets.find((asset) => {
+        const n = lowerName(asset)
+        return n.endsWith('.exe') && (n.includes('royalelauncher') || n.includes('royalelauncherinstaller') || n.includes('installer'))
+      })
+      || assets.find((asset) => lowerName(asset).endsWith('.exe'))
     const installerUrl = String(installerAsset?.browser_download_url || '').trim()
     const installerName = String(installerAsset?.name || '').trim()
 

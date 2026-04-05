@@ -44,7 +44,7 @@
       "tokenEnv": "ROYALE_GITHUB_TOKEN"
     },
     "notes": "Клиент Royale Master для Minecraft 1.16.5 (Fabric).",
-    "javaVersion": 8,
+    "javaVersion": 17,
     "clientRevision": "royale-1.0.14-1.16.5"
   },
   {
