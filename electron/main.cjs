@@ -285,10 +285,19 @@ const DEFAULT_VERSION_CATALOG = [
   },
   {
     versionName: '1.16.5',
-    channel: 'Скоро',
-    title: 'Версия готовится',
-    source: '',
-    notes: 'Эта версия появится позже.'
+    channel: 'Сборка 1.16.5',
+    title: 'Royale Master',
+    source: {
+      type: 'github-release-asset',
+      owner: 'SqwaTik',
+      repo: 'Royale-Launcher-Versions',
+      release: 'v1.16.5',
+      asset: '1.16.5.zip',
+      tokenEnv: 'ROYALE_GITHUB_TOKEN'
+    },
+    javaVersion: 8,
+    clientRevision: 'royale-1.0.14-1.16.5',
+    notes: 'Клиент Royale Master для Minecraft 1.16.5 (Fabric).'
   },
   {
     versionName: '1.12.2',

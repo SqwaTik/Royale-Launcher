@@ -26,7 +26,7 @@ const DEFAULT_SETTINGS = {
     { versionName: '1.21.11', channel: 'Основная сборка', title: 'Royale Master', source: { type: 'github-release-asset', owner: 'SqwaTik', repo: 'Royale-Launcher-Versions', release: 'latest', asset: '1.21.11.zip', tokenEnv: 'ROYALE_GITHUB_TOKEN' }, notes: 'Клиент Royale Master для Minecraft 1.21.11 с отдельной установкой и прямым запуском.' },
     { versionName: '26.1', channel: 'Скоро', title: 'Версия готовится', source: '', notes: 'Эта версия появится позже.' },
     { versionName: '1.21.4', channel: 'Скоро', title: 'Версия готовится', source: '', notes: 'Эта версия появится позже.' },
-    { versionName: '1.16.5', channel: 'Скоро', title: 'Версия готовится', source: '', notes: 'Эта версия появится позже.' },
+    { versionName: '1.16.5', channel: 'Сборка 1.16.5', title: 'Royale Master', source: { type: 'github-release-asset', owner: 'SqwaTik', repo: 'Royale-Launcher-Versions', release: 'v1.16.5', asset: '1.16.5.zip', tokenEnv: 'ROYALE_GITHUB_TOKEN' }, notes: 'Клиент Royale Master для Minecraft 1.16.5 (Fabric).' },
     { versionName: '1.12.2', channel: 'Скоро', title: 'Версия готовится', source: '', notes: 'Эта версия появится позже.' }
   ]
 }
