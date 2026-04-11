@@ -4192,12 +4192,12 @@ input {
 
 .feature-stage {
   justify-self: stretch !important;
-  align-self: stretch !important;
+  align-self: end !important;
   width: 100% !important;
   min-width: 0 !important;
   max-width: none !important;
   min-height: 0 !important;
-  height: 100% !important;
+  height: auto !important;
   max-height: 100% !important;
 }
 

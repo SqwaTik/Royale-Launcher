@@ -850,9 +850,30 @@ function getLauncherConfigPath() {
 
 async function ensureVersionCatalog() {
   const catalogPath = getVersionCatalogPath()
+  const normalizedDefault = normalizeCatalog(DEFAULT_VERSION_CATALOG)
+  let shouldWrite = false
+
   try {
-    await fsp.access(catalogPath)
+    const raw = await fsp.readFile(catalogPath, 'utf8')
+    const existing = normalizeCatalog(JSON.parse(raw))
+    const existingMap = new Map(existing.map((entry) => [String(entry.versionName || '').toLowerCase(), entry]))
+
+    for (const entry of normalizedDefault) {
+      const current = existingMap.get(String(entry.versionName || '').toLowerCase())
+      if (!current) {
+        shouldWrite = true
+        break
+      }
+      if (entry.clientRevision && entry.clientRevision !== current.clientRevision) {
+        shouldWrite = true
+        break
+      }
+    }
   } catch {
+    shouldWrite = true
+  }
+
+  if (shouldWrite) {
     await fsp.writeFile(catalogPath, JSON.stringify(DEFAULT_VERSION_CATALOG, null, 2), 'utf8')
   }
 }
