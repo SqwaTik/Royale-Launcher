@@ -368,13 +368,13 @@ input {
 
 .hero__backdrop {
   position: absolute;
-  inset: -12%;
+  inset: -16% -10% -10% -18%;
   background-size: cover;
   background-repeat: no-repeat;
   background-position: center;
   opacity: 0.16;
   filter: blur(16px) saturate(0.92);
-  transform: scale(1.08);
+  transform: scale(1.1);
   will-change: opacity, transform;
   transition: opacity 420ms ease, transform 520ms cubic-bezier(0.22, 1, 0.36, 1);
 }

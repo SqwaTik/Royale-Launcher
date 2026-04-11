@@ -457,7 +457,7 @@ const DEFAULT_VERSION_CATALOG = [
       tokenEnv: 'ROYALE_GITHUB_TOKEN'
     },
     javaVersion: 17,
-    clientRevision: 'royale-1.0.14-1.16.5-r8',
+    clientRevision: 'royale-1.0.14-1.16.5-r9',
     notes: 'Клиент Royale Master для Minecraft 1.16.5 (Fabric) с отдельной установкой и прямым запуском.'
   },
   {
@@ -2371,6 +2371,18 @@ function getSourceDescriptorResumeKey(sourceDescriptor) {
   return String(sourceDescriptor?.resumeKey || sourceDescriptor?.value || '').trim()
 }
 
+function buildInstallResumeKey(sourceDescriptor, versionRevision = '') {
+  const baseKey = getSourceDescriptorResumeKey(sourceDescriptor)
+  const revision = String(versionRevision || '').trim()
+  if (!baseKey) {
+    return revision
+  }
+  if (!revision) {
+    return baseKey
+  }
+  return `${baseKey}#${revision}`
+}
+
 function resolveSourceDescriptor(source) {
   if (source && typeof source === 'object') {
     const type = String(source.type || '').trim().toLowerCase()
@@ -2527,7 +2539,7 @@ async function getVersionStateFromSettings(settings, versionName) {
   const source = resolveSourceDescriptor(version.source)
   const runningClient = await getActiveRunningClientState()
   const pendingInstall = source.kind === 'remote' || source.kind === 'github-release-asset'
-    ? await getResumableInstallState(version.versionName, getSourceDescriptorResumeKey(source))
+    ? await getResumableInstallState(version.versionName, buildInstallResumeKey(source, version.clientRevision))
     : null
   const running = Boolean(runningClient && runningClient.versionName.toLowerCase() === version.versionName.toLowerCase())
   const gameplayStats = await readGameplayStats(version.versionName, installDir)
@@ -5257,12 +5269,12 @@ async function installVersion(versionName) {
       const sourceRequest = await resolveSourceDownloadRequest(source)
       const fileName = guessFileName(sourceRequest.fileName || sourceRequest.url, version.versionName)
       const extension = path.extname(fileName).toLowerCase() || '.zip'
-      const resumeState = await getResumableInstallState(version.versionName, getSourceDescriptorResumeKey(source))
+      const resumeState = await getResumableInstallState(version.versionName, buildInstallResumeKey(source, version.clientRevision))
       tempFile = resumeState?.tempFile || getInstallResumeTempFile(version.versionName, extension)
       setInstallStatus(`Загрузка ${version.versionName}`)
       await downloadToFile(sourceRequest.url, tempFile, {
         versionName: version.versionName,
-        sourceKey: getSourceDescriptorResumeKey(source),
+        sourceKey: buildInstallResumeKey(source, version.clientRevision),
         requestOptions: sourceRequest.requestOptions,
         resumeFrom: resumeState?.current || 0,
         total: resumeState?.total || 0
