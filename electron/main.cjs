@@ -457,7 +457,7 @@ const DEFAULT_VERSION_CATALOG = [
       tokenEnv: 'ROYALE_GITHUB_TOKEN'
     },
     javaVersion: 17,
-    clientRevision: 'royale-1.0.14-1.16.5-r9',
+    clientRevision: 'royale-1.0.14-1.16.5-r10',
     notes: 'Клиент Royale Master для Minecraft 1.16.5 (Fabric) с отдельной установкой и прямым запуском.'
   },
   {
@@ -4105,6 +4105,11 @@ async function buildManagedClientLaunchPlan(settings, versionName, installDir, p
 
   classpathEntries.push(clientJarPath)
 
+  const lwjglFallback = appendLwjglFallbackLibraries(classpathEntries, settings)
+  if (lwjglFallback.length > 0) {
+    writeDebugLog('launch:lwjgl-fallback', { versionName, added: lwjglFallback })
+  }
+
   const runtimeRoot = resolveManagedRuntimeRoot(gameDir)
   const nativesDir = path.join(runtimeRoot, 'natives', sanitizeVersionName(managedFabricVersionId))
   await ensurePreparedNatives(nativeLibraryPaths, nativesDir, runtimeRoot)
@@ -4165,6 +4170,10 @@ async function buildManagedClientLaunchPlan(settings, versionName, installDir, p
 
   jvmArgs.push(...collectLaunchArguments(baseProfile.arguments?.jvm, replacements, featureFlags))
   jvmArgs.push(...collectLaunchArguments(fabricProfile.arguments?.jvm, replacements, featureFlags))
+
+  if (!jvmArgs.some((item) => item === '-cp' || item === '--class-path')) {
+    jvmArgs.push('-cp', replacements.classpath)
+  }
 
   setLaunchStatus('Проверяю managed-моды...')
   await ensureManagedModsFromManifest(manifest, gameDir, { downloadMissing: false })
@@ -5381,6 +5390,77 @@ function buildJavaArgs(settings, versionName, installDir, launchableFile) {
   }
 
   return args
+}
+
+function findLatestLibraryJar(librariesRoot, artifactName) {
+  if (!librariesRoot || !artifactName || !fs.existsSync(librariesRoot)) {
+    return ''
+  }
+
+  const artifactDir = path.join(librariesRoot, artifactName)
+  if (!fs.existsSync(artifactDir)) {
+    return ''
+  }
+
+  let versions = []
+  try {
+    versions = fs.readdirSync(artifactDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+  } catch {
+    return ''
+  }
+
+  if (!versions.length) {
+    return ''
+  }
+
+  versions.sort((a, b) => b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' }))
+
+  for (const version of versions) {
+    const exact = path.join(artifactDir, version, `${artifactName}-${version}.jar`)
+    if (fs.existsSync(exact) && !exact.includes('-natives-')) {
+      return exact
+    }
+
+    try {
+      const files = fs.readdirSync(path.join(artifactDir, version), { withFileTypes: true })
+        .filter((entry) => entry.isFile() && entry.name.endsWith('.jar') && !entry.name.includes('-natives-'))
+      if (files.length > 0) {
+        return path.join(artifactDir, version, files[0].name)
+      }
+    } catch {}
+  }
+
+  return ''
+}
+
+function appendLwjglFallbackLibraries(classpathEntries, settings) {
+  const librariesRoot = resolveSharedDirectory(settings, path.join('libraries', 'org', 'lwjgl'))
+  if (!fs.existsSync(librariesRoot)) {
+    return []
+  }
+
+  const artifacts = [
+    'lwjgl',
+    'lwjgl-glfw',
+    'lwjgl-opengl',
+    'lwjgl-stb',
+    'lwjgl-openal',
+    'lwjgl-jemalloc',
+    'lwjgl-tinyfd'
+  ]
+
+  const added = []
+  for (const artifact of artifacts) {
+    const jarPath = findLatestLibraryJar(librariesRoot, artifact)
+    if (jarPath && !classpathEntries.includes(jarPath)) {
+      classpathEntries.push(jarPath)
+      added.push(jarPath)
+    }
+  }
+
+  return added
 }
 
 async function waitForChildSpawn(child, timeoutMs = 6000) {
