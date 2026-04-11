@@ -4275,7 +4275,7 @@ input {
 }
 
 .feature-stage__overlay {
-  flex: 1 1 auto !important;
+  flex: 0 0 auto !important;
   min-height: 0 !important;
   padding: 16px 16px 14px !important;
   gap: 10px !important;
@@ -4288,11 +4288,12 @@ input {
   max-width: none !important;
   min-height: 0 !important;
   margin: 0 !important;
-  padding: 14px 16px 16px !important;
+  padding: 14px 16px 12px !important;
   gap: 10px !important;
-  flex: 1 1 auto !important;
+  flex: 0 1 auto !important;
   overflow-x: hidden !important;
   overflow-y: hidden !important;
+  box-sizing: border-box !important;
 }
 
 .feature-stage__visual {
@@ -4349,7 +4350,7 @@ input {
 }
 
 .feature-stage__action-shell {
-  margin-top: auto !important;
+  margin-top: 8px !important;
 }
 
 .feature-stage__action-shell .primary-action {
@@ -4405,8 +4406,8 @@ input {
 }
 
 .feature-stage__panel {
-  padding-bottom: 12px !important;
-  flex: 1 1 auto !important;
+  padding-bottom: 10px !important;
+  flex: 0 1 auto !important;
   min-height: 0 !important;
 }
 
@@ -4425,8 +4426,14 @@ input {
 }
 
 .hero__backdrop {
-  opacity: 0.12;
-  filter: blur(12px) saturate(0.9);
+  opacity: 0.15;
+  filter: blur(10px) saturate(0.92);
+  inset: -28% -24% -22% -28%;
+}
+
+.hero::after {
+  inset: -14%;
+  opacity: 0.82;
 }
 
 .feature-stage__visual-image {

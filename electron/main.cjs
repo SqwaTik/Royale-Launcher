@@ -4080,6 +4080,11 @@ async function buildManagedClientLaunchPlan(settings, versionName, installDir, p
   const libraries = mergeLibraries(baseProfile.libraries, fabricProfile.libraries)
   const classpathEntries = []
   const nativeLibraryPaths = []
+  const pushUniquePath = (list, value) => {
+    if (!value) return
+    if (list.includes(value)) return
+    list.push(value)
+  }
 
   setLaunchStatus('Проверяю libraries...')
   for (const library of libraries) {
@@ -4089,17 +4094,20 @@ async function buildManagedClientLaunchPlan(settings, versionName, installDir, p
     }
 
     const isNative = isNativeLibraryEntry(library)
-    const libraryPath = isNative
-      ? resolveNativeLibraryAbsolutePath(settings, library)
-      : resolveLibraryAbsolutePath(settings, library)
-    if (!libraryPath || !fs.existsSync(libraryPath)) {
-      throw new Error(`Не найдена библиотека для запуска: ${library?.name || libraryPath}`)
+    const artifactPath = resolveLibraryAbsolutePath(settings, library)
+    if (artifactPath) {
+      if (!fs.existsSync(artifactPath)) {
+        throw new Error(`Не найдена библиотека для запуска: ${library?.name || artifactPath}`)
+      }
+      pushUniquePath(classpathEntries, artifactPath)
     }
 
     if (isNative) {
-      nativeLibraryPaths.push(libraryPath)
-    } else {
-      classpathEntries.push(libraryPath)
+      const nativePath = resolveNativeLibraryAbsolutePath(settings, library)
+      if (!nativePath || !fs.existsSync(nativePath)) {
+        throw new Error(`Не найдена native-библиотека для запуска: ${library?.name || nativePath}`)
+      }
+      pushUniquePath(nativeLibraryPaths, nativePath)
     }
   }
 
