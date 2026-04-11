@@ -126,6 +126,76 @@ let javaInstallInFlight = null
 const jsonFileCache = new Map()
 let debugLogPath = ''
 
+function extractCrashSummary(text) {
+  if (!text) return ''
+  const lines = String(text).split(/\r?\n/)
+  const description = lines.find((line) => line.startsWith('Description:'))
+  if (description) {
+    return description.replace('Description:', '').trim()
+  }
+  const cause = lines.find((line) => line.includes('Caused by:'))
+  if (cause) {
+    return cause.trim()
+  }
+  return ''
+}
+
+async function findLatestCrashReport(installDir, startedAtMs) {
+  if (!installDir) return null
+  const crashDir = path.join(installDir, 'crash-reports')
+  try {
+    const entries = await fsp.readdir(crashDir, { withFileTypes: true })
+    const reports = entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.txt'))
+      .map((entry) => {
+        const fullPath = path.join(crashDir, entry.name)
+        return { name: entry.name, fullPath }
+      })
+
+    if (!reports.length) return null
+
+    const stats = await Promise.all(reports.map(async (report) => {
+      try {
+        const fileStat = await fsp.stat(report.fullPath)
+        return { ...report, mtimeMs: fileStat.mtimeMs }
+      } catch {
+        return null
+      }
+    }))
+
+    const recent = stats
+      .filter(Boolean)
+      .filter((entry) => entry.mtimeMs >= (startedAtMs - 15000))
+      .sort((a, b) => b.mtimeMs - a.mtimeMs)
+
+    return recent[0] || null
+  } catch {
+    return null
+  }
+}
+
+async function notifyLaunchCrash(installDir, startedAtMs) {
+  const report = await findLatestCrashReport(installDir, startedAtMs)
+  if (!report) {
+    return false
+  }
+
+  try {
+    const text = await fsp.readFile(report.fullPath, 'utf8')
+    const summary = extractCrashSummary(text)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('launch:crash', {
+        reportPath: report.fullPath,
+        summary,
+        body: text
+      })
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
 const APP_ID = 'com.royale.launcher'
 const BUNDLED_VERSION_CATALOG_PATH = path.join(__dirname, 'version-catalog.json')
 const BUNDLED_LAUNCHER_CONFIG_PATH = path.join(__dirname, 'launcher-config.json')
@@ -387,7 +457,7 @@ const DEFAULT_VERSION_CATALOG = [
       tokenEnv: 'ROYALE_GITHUB_TOKEN'
     },
     javaVersion: 17,
-    clientRevision: 'royale-1.0.14-1.16.5-r5',
+    clientRevision: 'royale-1.0.14-1.16.5-r6',
     notes: 'Клиент Royale Master для Minecraft 1.16.5 (Fabric) с отдельной установкой и прямым запуском.'
   },
   {
@@ -5740,6 +5810,7 @@ function trackLaunchedProcess(child, settings) {
 
   const hideOnLaunch = settings.hideLauncherOnGameLaunch !== false
   const reopenOnExit = settings.reopenLauncherOnGameExit !== false
+  const startedAtMs = Date.now()
 
   if (child.pid) {
     saveRunningClientState({
@@ -5755,20 +5826,30 @@ function trackLaunchedProcess(child, settings) {
     hideMainWindowToTray()
   }
 
-  child.once('exit', () => {
+  child.once('exit', (code, signal) => {
+    const exitCode = typeof code === 'number' ? code : null
+    const exitSignal = signal ? String(signal) : ''
+    writeDebugLog('launch:exit', { pid: child.pid || 0, exitCode, exitSignal })
     stopRunningClientWatcher()
     setLaunchStatus('')
     clearRunningClientState(child.pid || 0).catch(() => {})
 
-    const windowHiddenToTray = Boolean(tray) || (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible())
-    if (windowHiddenToTray) {
-      if (reopenOnExit) {
+    void (async () => {
+      const didCrash = await notifyLaunchCrash(child.royaleInstallDir, startedAtMs)
+      if (didCrash) {
         showMainWindow()
       }
-      return
-    }
 
-    destroyTray()
+      const windowHiddenToTray = Boolean(tray) || (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible())
+      if (windowHiddenToTray) {
+        if (reopenOnExit || didCrash) {
+          showMainWindow()
+        }
+        return
+      }
+
+      destroyTray()
+    })()
   })
 }
 

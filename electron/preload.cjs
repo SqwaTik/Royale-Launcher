@@ -45,5 +45,10 @@ contextBridge.exposeInMainWorld('royaleApi', {
     const listener = (_event, payload) => callback(payload)
     ipcRenderer.on('java-install:status', listener)
     return () => ipcRenderer.removeListener('java-install:status', listener)
+  },
+  onLaunchCrash: (callback) => {
+    const listener = (_event, payload) => callback(payload)
+    ipcRenderer.on('launch:crash', listener)
+    return () => ipcRenderer.removeListener('launch:crash', listener)
   }
 })

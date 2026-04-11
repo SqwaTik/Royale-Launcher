@@ -425,6 +425,35 @@ const ConfirmModal = memo(function ConfirmModal({
   )
 })
 
+const CrashModal = memo(function CrashModal({ report, onClose, onOpenFolder }) {
+  return (
+    <div className="crash-backdrop" role="presentation">
+      <div
+        className="crash-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="crash-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="crash-modal__head">
+          <div>
+            <h3 id="crash-title">Игра завершилась с ошибкой</h3>
+            <p className="crash-modal__summary">{report?.summary || 'Crash report'}</p>
+          </div>
+          <button className="soft-button" type="button" onClick={onClose}>Закрыть</button>
+        </div>
+        {report?.reportPath ? (
+          <p className="crash-modal__path">Отчёт: {report.reportPath}</p>
+        ) : null}
+        <div className="crash-modal__actions">
+          <button className="soft-button" type="button" onClick={onOpenFolder}>Открыть папку</button>
+        </div>
+        <pre className="crash-modal__body">{report?.body || ''}</pre>
+      </div>
+    </div>
+  )
+})
+
 const JavaRuntimeModal = memo(function JavaRuntimeModal({
   requiredJavaVersion,
   rememberChoice,
@@ -817,6 +846,7 @@ function App() {
   const [bootstrapped, setBootstrapped] = useState(false)
   const [showVersionArt, setShowVersionArt] = useState(false)
   const [activeToast, setActiveToast] = useState(null)
+  const [crashReport, setCrashReport] = useState(null)
   const [heroFactIndex, setHeroFactIndex] = useState(0)
   const [heroBackdrop, setHeroBackdrop] = useState({
     currentImage: '',
@@ -855,6 +885,18 @@ function App() {
   useEffect(() => {
     activeToastRef.current = activeToast
   }, [activeToast])
+
+  useEffect(() => {
+    if (!api?.onLaunchCrash) return () => {}
+    return api.onLaunchCrash((payload) => {
+      if (!payload) return
+      setCrashReport({
+        reportPath: String(payload.reportPath || ''),
+        summary: String(payload.summary || 'Crash report'),
+        body: String(payload.body || '')
+      })
+    })
+  }, [api])
 
   useEffect(() => () => {
     if (selectedVersionSaveRef.current) {
@@ -2315,6 +2357,21 @@ function App() {
           onRememberChoiceChange={(value) => setJavaPrompt((current) => ({ ...current, rememberChoice: value }))}
           onCancel={handleCancelJavaPrompt}
           onInstall={handleInstallJavaPrompt}
+        />
+      ) : null}
+
+      {crashReport ? (
+        <CrashModal
+          report={crashReport}
+          onClose={() => setCrashReport(null)}
+          onOpenFolder={() => {
+            const target = crashReport.reportPath
+              ? crashReport.reportPath.replace(/\\[^\\]+$/, '')
+              : ''
+            if (target) {
+              api.openFolder(target)
+            }
+          }}
         />
       ) : null}
 
