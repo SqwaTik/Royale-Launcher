@@ -43,9 +43,9 @@
       "asset": "1.16.5.zip",
       "tokenEnv": "ROYALE_GITHUB_TOKEN"
     },
-    "notes": "Клиент Royale Master для Minecraft 1.16.5 (Fabric).",
+    "notes": "Клиент Royale Master для Minecraft 1.16.5 (Fabric) с отдельной установкой и прямым запуском.",
     "javaVersion": 17,
-    "clientRevision": "royale-1.0.14-1.16.5"
+    "clientRevision": "royale-1.0.14-1.16.5-r4"
   },
   {
     "versionName": "1.12.2",

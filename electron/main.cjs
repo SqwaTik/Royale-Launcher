@@ -13,6 +13,7 @@ function getDefaultInstallFolder() {
 
 const LAUNCHER_DATA_DIR = '.royale'
 const LEGACY_APPDATA_DIR_NAMES = ['royale-launcher', 'Royale Launcher', 'royale-launcher-electron']
+const IS_SMOKE_TEST_RUN = process.argv.some((entry) => String(entry || '').startsWith('--smoke-test='))
 
 function parseEarlyArgvValue(prefix) {
   for (const arg of process.argv) {
@@ -385,8 +386,8 @@ const DEFAULT_VERSION_CATALOG = [
       tokenEnv: 'ROYALE_GITHUB_TOKEN'
     },
     javaVersion: 17,
-    clientRevision: 'royale-1.0.14-1.16.5',
-    notes: 'Клиент Royale Master для Minecraft 1.16.5 (Fabric).'
+    clientRevision: 'royale-1.0.14-1.16.5-r4',
+    notes: 'Клиент Royale Master для Minecraft 1.16.5 (Fabric) с отдельной установкой и прямым запуском.'
   },
   {
     versionName: '1.12.2',
@@ -768,6 +769,10 @@ async function findLatestLegacyFile(fileName) {
 }
 
 async function migrateLegacyUserData() {
+  if (IS_SMOKE_TEST_RUN) {
+    return
+  }
+
   const targetDir = app.getPath('userData')
   await fsp.mkdir(targetDir, { recursive: true })
 
@@ -1817,6 +1822,12 @@ async function ensureManagedModsFromManifest(manifest, gameDir, options = {}) {
   }
 
   await normalizeManagedRuntimeVisibility(gameDir)
+
+  const runtimeModFiles = listManagedRuntimeModFiles(gameDir)
+  if (runtimeModFiles.length > 0) {
+    return runtimeModFiles
+  }
+
   return resolvedFiles
 }
 
@@ -2987,7 +2998,29 @@ function parseLibraryName(value) {
   }
 }
 
-function resolveLibraryRelativePath(library) {
+function getCurrentNativeClassifierArch() {
+  if (process.arch === 'ia32') return '32'
+  if (process.arch === 'x64') return '64'
+  if (process.arch === 'arm64') return 'arm64'
+  return String(process.arch || '').trim().toLowerCase()
+}
+
+function resolveNativeLibraryClassifier(library) {
+  const natives = library?.natives
+  if (!natives || typeof natives !== 'object') {
+    return ''
+  }
+
+  const osName = getCurrentRuleOsName()
+  const rawClassifier = String(natives[osName] || '').trim()
+  if (!rawClassifier) {
+    return ''
+  }
+
+  return rawClassifier.replaceAll('${arch}', getCurrentNativeClassifierArch())
+}
+
+function resolveLibraryArtifactRelativePath(library) {
   const artifactPath = String(library?.downloads?.artifact?.path || '').trim()
   if (artifactPath) {
     return artifactPath.replace(/[\\/]+/g, path.sep)
@@ -3005,14 +3038,46 @@ function resolveLibraryRelativePath(library) {
   return path.join(...parsed.group.split('.'), parsed.artifact, parsed.version, fileName)
 }
 
+function resolveLibraryNativeRelativePath(library) {
+  const classifier = resolveNativeLibraryClassifier(library)
+  if (!classifier) {
+    return ''
+  }
+
+  const classifierPath = String(library?.downloads?.classifiers?.[classifier]?.path || '').trim()
+  if (classifierPath) {
+    return classifierPath.replace(/[\\/]+/g, path.sep)
+  }
+
+  const parsed = parseLibraryName(library?.name)
+  if (!parsed) {
+    return ''
+  }
+
+  return path.join(
+    ...parsed.group.split('.'),
+    parsed.artifact,
+    parsed.version,
+    `${parsed.artifact}-${parsed.version}-${classifier}.${parsed.extension}`
+  )
+}
+
+function resolveLibraryRelativePath(library) {
+  return resolveLibraryArtifactRelativePath(library)
+}
+
 function resolveLibraryAbsolutePath(settings, library) {
-  const relativePath = resolveLibraryRelativePath(library)
+  const relativePath = resolveLibraryArtifactRelativePath(library)
+  return relativePath ? resolveSharedDirectory(settings, path.join('libraries', relativePath)) : ''
+}
+
+function resolveNativeLibraryAbsolutePath(settings, library) {
+  const relativePath = resolveLibraryNativeRelativePath(library)
   return relativePath ? resolveSharedDirectory(settings, path.join('libraries', relativePath)) : ''
 }
 
 function isNativeLibraryEntry(library) {
-  const parsed = parseLibraryName(library?.name)
-  return Boolean(parsed?.classifier && /^natives-/i.test(parsed.classifier))
+  return Boolean(resolveNativeLibraryClassifier(library))
 }
 
 function mergeLibraries(baseLibraries, extraLibraries) {
@@ -3256,6 +3321,33 @@ async function resolveJavaStatus(settings, versionName, manifest = null) {
   const installRoot = resolveInstallRoot(settings)
   const cacheKey = `${installRoot}::${requiredJavaVersion}`
   if (javaExecutableCache?.key === cacheKey && javaExecutableCache.path && fs.existsSync(javaExecutableCache.path)) {
+    if (javaExecutableCache.source === 'system' && requiredJavaVersion > 0) {
+      const bundledCandidate = await findJavaExecutableInDirectory(getJavaRuntimeDirectory(settings, requiredJavaVersion))
+      if (isJavaExecutableCompatible(bundledCandidate, requiredJavaVersion)) {
+        javaExecutableCache = null
+      } else {
+        return {
+          available: true,
+          source: javaExecutableCache.source || 'cache',
+          javaExecutable: javaExecutableCache.path,
+          requiredJavaVersion
+        }
+      }
+    } else {
+      return {
+        available: true,
+        source: javaExecutableCache.source || 'cache',
+        javaExecutable: javaExecutableCache.path,
+        requiredJavaVersion
+      }
+    }
+  }
+
+  if (javaExecutableCache?.key === cacheKey && !javaExecutableCache.path) {
+    javaExecutableCache = null
+  }
+
+  if (javaExecutableCache?.key === cacheKey && javaExecutableCache.path && fs.existsSync(javaExecutableCache.path)) {
     return {
       available: true,
       source: javaExecutableCache.source || 'cache',
@@ -3315,7 +3407,17 @@ async function resolveJavaStatus(settings, versionName, manifest = null) {
 async function resolveJavaExecutable(settings, versionName, manifest = null) {
   let status = await resolveJavaStatus(settings, versionName, manifest)
   if (status.available && status.javaExecutable) {
-    return status.javaExecutable
+    const requiredJavaVersion = Math.max(0, Number(status.requiredJavaVersion) || 0)
+    const resolvedMajorVersion = Math.max(0, Number(getJavaExecutableMajorVersion(status.javaExecutable)) || 0)
+    const shouldInstallExactRuntime =
+      status.source === 'system' &&
+      requiredJavaVersion > 0 &&
+      resolvedMajorVersion > 0 &&
+      resolvedMajorVersion !== requiredJavaVersion
+
+    if (!shouldInstallExactRuntime) {
+      return status.javaExecutable
+    }
   }
 
   try {
@@ -3329,6 +3431,7 @@ async function resolveJavaExecutable(settings, versionName, manifest = null) {
     )
   }
 
+  javaExecutableCache = null
   status = await resolveJavaStatus(settings, versionName, manifest)
   if (status.available && status.javaExecutable) {
     return status.javaExecutable
@@ -3389,13 +3492,21 @@ async function installJavaRuntime(settings, versionName, manifest = null) {
 
   javaInstallInFlight = (async () => {
     const currentStatus = await resolveJavaStatus(settings, versionName, manifest)
-    if (currentStatus.available) {
+    const requiredJavaVersion = currentStatus.requiredJavaVersion || resolveRequiredJavaVersion(settings, versionName, manifest)
+    const currentMajorVersion = Math.max(0, Number(getJavaExecutableMajorVersion(currentStatus.javaExecutable)) || 0)
+    const shouldInstallExactRuntime =
+      currentStatus.available &&
+      currentStatus.source === 'system' &&
+      requiredJavaVersion > 0 &&
+      currentMajorVersion > 0 &&
+      currentMajorVersion !== requiredJavaVersion
+
+    if (currentStatus.available && !shouldInstallExactRuntime) {
       emitJavaInstallStatus('')
       emitJavaInstallProgress({ phase: 'idle', progress: 0, current: 0, total: 0 })
       return currentStatus
     }
 
-    const requiredJavaVersion = currentStatus.requiredJavaVersion || resolveRequiredJavaVersion(settings, versionName, manifest)
     const runtimeInfo = await resolveAdoptiumRuntimePackage(requiredJavaVersion)
     const tempFile = getJavaDownloadTempFile(requiredJavaVersion, runtimeInfo.fileName)
     const runtimeDir = getJavaRuntimeDirectory(settings, requiredJavaVersion)
@@ -3452,26 +3563,26 @@ function buildLibraryDownloadEntries(settings, libraries) {
       continue
     }
 
-    const artifactPath = String(library?.downloads?.artifact?.path || '').trim()
+    const baseUrl = String(library?.url || 'https://libraries.minecraft.net/').replace(/\/+$/, '')
+    const artifactRelativePath = resolveLibraryArtifactRelativePath(library)
     const artifactUrl = String(library?.downloads?.artifact?.url || '').trim()
-    const relativePath = artifactPath
-      ? artifactPath.replace(/[\\/]+/g, path.sep)
-      : resolveLibraryRelativePath(library)
 
-    if (!relativePath) {
-      continue
+    if (artifactRelativePath) {
+      items.push({
+        destinationPath: resolveSharedDirectory(settings, path.join('libraries', artifactRelativePath)),
+        url: artifactUrl || `${baseUrl}/${artifactRelativePath.replace(/\\/g, '/')}`
+      })
     }
 
-    let url = artifactUrl
-    if (!url) {
-      const baseUrl = String(library?.url || 'https://libraries.minecraft.net/').replace(/\/+$/, '')
-      url = `${baseUrl}/${relativePath.replace(/\\/g, '/')}`
+    const nativeClassifier = resolveNativeLibraryClassifier(library)
+    const nativeRelativePath = resolveLibraryNativeRelativePath(library)
+    const nativeUrl = String(library?.downloads?.classifiers?.[nativeClassifier]?.url || '').trim()
+    if (nativeRelativePath) {
+      items.push({
+        destinationPath: resolveSharedDirectory(settings, path.join('libraries', nativeRelativePath)),
+        url: nativeUrl || `${baseUrl}/${nativeRelativePath.replace(/\\/g, '/')}`
+      })
     }
-
-    items.push({
-      destinationPath: resolveSharedDirectory(settings, path.join('libraries', relativePath)),
-      url
-    })
   }
 
   return uniqueByRelativePath(items)
@@ -3859,12 +3970,15 @@ async function buildManagedClientLaunchPlan(settings, versionName, installDir, p
       continue
     }
 
-    const libraryPath = resolveLibraryAbsolutePath(settings, library)
+    const isNative = isNativeLibraryEntry(library)
+    const libraryPath = isNative
+      ? resolveNativeLibraryAbsolutePath(settings, library)
+      : resolveLibraryAbsolutePath(settings, library)
     if (!libraryPath || !fs.existsSync(libraryPath)) {
       throw new Error(`Не найдена библиотека для запуска: ${library?.name || libraryPath}`)
     }
 
-    if (isNativeLibraryEntry(library)) {
+    if (isNative) {
       nativeLibraryPaths.push(libraryPath)
     } else {
       classpathEntries.push(libraryPath)
@@ -3935,8 +4049,9 @@ async function buildManagedClientLaunchPlan(settings, versionName, installDir, p
   jvmArgs.push(...collectLaunchArguments(fabricProfile.arguments?.jvm, replacements, featureFlags))
 
   setLaunchStatus('Проверяю managed-моды...')
-  const managedModFiles = await ensureManagedModsFromManifest(manifest, gameDir, { downloadMissing: false })
+  await ensureManagedModsFromManifest(manifest, gameDir, { downloadMissing: false })
   assertLaunchNotCancelled()
+  const managedModFiles = listManagedRuntimeModFiles(gameDir)
   if (managedModFiles.length > 0 && !jvmArgs.some((item) => /^-Dfabric\.addMods=/i.test(item))) {
     jvmArgs.push(`-Dfabric.addMods=${managedModFiles.join(path.delimiter)}`)
   }
@@ -4403,6 +4518,14 @@ async function installLauncherUpdate() {
   const installerName = update.assetName || `RoyaleLauncherInstaller-v${update.version || app.getVersion()}.exe`
   const installerPath = path.join(updateDir, installerName)
   await downloadRemoteFile(update.url, installerPath)
+  try {
+    const stats = await fsp.stat(installerPath)
+    if (!stats || stats.size <= 0) {
+      throw new Error('installer-download-empty')
+    }
+  } catch {
+    throw new Error('Не удалось скачать installer для обновления лаунчера.')
+  }
 
   const fallbackLaunchExe = path.join(path.dirname(app.getPath('exe')), 'Royale Launcher.exe')
   const currentExe = process.execPath
@@ -4449,7 +4572,14 @@ async function installLauncherUpdate() {
     '  $installerProcess.WaitForExit()',
     "  Write-UpdateLog ('installer-exit ' + $installerProcess.ExitCode)",
     '  if (($installerProcess.ExitCode -ne 0) -and ($installerProcess.ExitCode -ne 1641) -and ($installerProcess.ExitCode -ne 3010)) {',
-    '    throw ("installer-exit-" + $installerProcess.ExitCode)',
+    "    Write-UpdateLog 'installer-silent-failed'",
+    "    $installerProcess = Start-Process -FilePath $installer -WindowStyle Normal -PassThru",
+    '    if ($null -eq $installerProcess) { throw "installer-start-failed-visible" }',
+    '    $installerProcess.WaitForExit()',
+    "    Write-UpdateLog ('installer-exit-visible ' + $installerProcess.ExitCode)",
+    '    if (($installerProcess.ExitCode -ne 0) -and ($installerProcess.ExitCode -ne 1641) -and ($installerProcess.ExitCode -ne 3010)) {',
+    '      throw ("installer-exit-" + $installerProcess.ExitCode)',
+    '    }',
     '  }',
     '  $deadline = (Get-Date).AddMinutes(2)',
     '  while ((Get-Date) -lt $deadline) {',
@@ -4487,6 +4617,9 @@ async function installLauncherUpdate() {
     stdio: 'ignore',
     windowsHide: true
   })
+  if (!helper.pid) {
+    throw new Error('Не удалось запустить установщик обновления.')
+  }
   helper.unref()
 
   isQuitRequested = true
@@ -5387,6 +5520,15 @@ async function runSmokeTest(cli) {
     }
   })
 
+  try {
+    const smokeResultPath = path.join(installRoot, '.royale', 'smoke-result.json')
+    await fsp.mkdir(path.dirname(smokeResultPath), { recursive: true })
+    await fsp.writeFile(smokeResultPath, JSON.stringify({
+      ok: true,
+      ...result
+    }, null, 2), 'utf8')
+  } catch {}
+
   console.log(JSON.stringify({
     ok: true,
     ...result
@@ -5636,6 +5778,14 @@ app.whenReady().then(async () => {
       await runSmokeTest(cli)
       app.quit()
     } catch (error) {
+      try {
+        const installRoot = cli.smokeInstallRoot
+          ? path.resolve(cli.smokeInstallRoot)
+          : path.join(app.getPath('temp'), 'royale-launcher-smoke')
+        const smokeErrorPath = path.join(installRoot, '.royale', 'smoke-error.txt')
+        await fsp.mkdir(path.dirname(smokeErrorPath), { recursive: true })
+        await fsp.writeFile(smokeErrorPath, error instanceof Error ? `${error.message}\n\n${error.stack || ''}` : String(error || ''), 'utf8')
+      } catch {}
       console.error(error instanceof Error ? error.message : error)
       app.exit(1)
     }

@@ -335,7 +335,7 @@ input {
     radial-gradient(circle at 22% 24%, rgba(255, 161, 87, 0.14), transparent 38%),
     radial-gradient(circle at 76% 72%, rgba(255, 222, 164, 0.1), transparent 34%);
   opacity: 0.74;
-  filter: blur(18px) saturate(0.94);
+  filter: blur(12px) saturate(0.96);
   transform: scale(1.08);
   pointer-events: none;
 }
@@ -368,11 +368,14 @@ input {
 
 .hero__backdrop {
   position: absolute;
-  inset: -8%;
+  inset: -12%;
   background-size: cover;
+  background-repeat: no-repeat;
+  background-position: center;
   opacity: 0.16;
-  filter: blur(22px) saturate(0.9);
+  filter: blur(16px) saturate(0.92);
   transform: scale(1.08);
+  will-change: opacity, transform;
   transition: opacity 420ms ease, transform 520ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -528,7 +531,7 @@ input {
   display: flex;
   flex-direction: column;
   padding: 22px;
-  margin-bottom: 24px;
+  margin-bottom: 0;
 }
 
 .version-dock__head {
@@ -827,7 +830,7 @@ input {
   color: var(--text);
   cursor: pointer;
   transition: background 120ms ease, border-color 120ms ease;
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(4px);
 }
 
 .icon-action:hover {
@@ -2949,28 +2952,28 @@ input {
 @keyframes hero-backdrop-in {
   from {
     opacity: 0;
-    filter: blur(42px) saturate(0.78);
-    transform: scale(1.12);
+    filter: blur(26px) saturate(0.82);
+    transform: scale(1.08);
   }
 
   to {
-    opacity: 0.19;
-    filter: blur(34px) saturate(0.86);
+    opacity: 0.2;
+    filter: blur(20px) saturate(0.9);
     transform: scale(1.08);
   }
 }
 
 @keyframes hero-backdrop-out {
   from {
-    opacity: 0.19;
-    filter: blur(34px) saturate(0.86);
+    opacity: 0.2;
+    filter: blur(20px) saturate(0.9);
     transform: scale(1.08);
   }
 
   to {
     opacity: 0;
-    filter: blur(44px) saturate(0.76);
-    transform: scale(1.14);
+    filter: blur(28px) saturate(0.82);
+    transform: scale(1.1);
   }
 }
 
@@ -3535,11 +3538,11 @@ input {
 }
 
 .hero__backdrop--current {
-  animation-duration: 960ms;
+  animation-duration: 880ms;
 }
 
 .hero__backdrop--previous {
-  animation-duration: 960ms;
+  animation-duration: 880ms;
 }
 
 .feature-stage__art {
@@ -3760,17 +3763,17 @@ input {
 }
 
 .hero__backdrop {
-  opacity: 0.14;
-  filter: blur(28px) saturate(0.98);
-  transform: scale(1.05);
+  opacity: 0.18;
+  filter: blur(18px) saturate(0.92);
+  transform: scale(1.06);
 }
 
 .hero__backdrop--current {
-  animation: hero-backdrop-in 1180ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: hero-backdrop-in 880ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .hero__backdrop--previous {
-  animation: hero-backdrop-out 1180ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: hero-backdrop-out 880ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 .feature-stage__art {
@@ -4188,49 +4191,6 @@ input {
 }
 
 .feature-stage {
-  align-self: stretch;
-  justify-self: stretch;
-  min-height: 0;
-  height: 100%;
-  width: 100%;
-  max-width: none;
-}
-
-.feature-stage__overlay {
-  flex: 1 1 0;
-  min-height: 0;
-  justify-content: flex-start;
-  padding: 14px 14px 12px;
-}
-
-.feature-stage__panel {
-  flex: 1 1 auto;
-  width: 100%;
-  max-width: none;
-  min-height: 0;
-  margin-top: 0;
-  margin-bottom: 0;
-  padding: 12px 14px 12px;
-  gap: 10px;
-  overflow-x: hidden;
-  overflow-y: auto;
-}
-
-.hero {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr) !important;
-  grid-template-rows: minmax(0, 1fr) !important;
-  align-items: stretch !important;
-}
-
-.hero__column--main {
-  min-height: 0 !important;
-}
-
-.version-dock {
-  margin-bottom: 0 !important;
-}
-
-.feature-stage {
   justify-self: stretch !important;
   align-self: stretch !important;
   width: 100% !important;
@@ -4238,13 +4198,15 @@ input {
   max-width: none !important;
   min-height: 0 !important;
   height: 100% !important;
+  max-height: 100% !important;
 }
 
 .feature-stage__overlay {
-  flex: 1 1 0 !important;
+  flex: 1 1 auto !important;
   min-height: 0 !important;
   padding: 16px 16px 14px !important;
   gap: 10px !important;
+  justify-content: flex-start !important;
 }
 
 .feature-stage__panel {
@@ -4257,7 +4219,7 @@ input {
   gap: 10px !important;
   flex: 1 1 auto !important;
   overflow-x: hidden !important;
-  overflow-y: auto !important;
+  overflow-y: hidden !important;
 }
 
 .feature-stage__visual {
@@ -4314,14 +4276,14 @@ input {
 }
 
 .feature-stage__action-shell {
-  margin-top: 6px !important;
+  margin-top: auto !important;
 }
 
 .feature-stage__action-shell .primary-action {
   margin-inline: 0 !important;
-  min-height: 60px !important;
-  padding: 0 20px !important;
-  border-radius: 24px !important;
+  min-height: 56px !important;
+  padding: 0 18px !important;
+  border-radius: 22px !important;
 }
 
 .feature-stage__action-shell .primary-action__title {

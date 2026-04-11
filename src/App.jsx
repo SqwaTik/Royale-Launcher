@@ -26,7 +26,7 @@ const DEFAULT_SETTINGS = {
     { versionName: '1.21.11', channel: 'Основная сборка', title: 'Royale Master', source: { type: 'github-release-asset', owner: 'SqwaTik', repo: 'Royale-Launcher-Versions', release: 'latest', asset: '1.21.11.zip', tokenEnv: 'ROYALE_GITHUB_TOKEN' }, notes: 'Клиент Royale Master для Minecraft 1.21.11 с отдельной установкой и прямым запуском.' },
     { versionName: '26.1', channel: 'Скоро', title: 'Версия готовится', source: '', notes: 'Эта версия появится позже.' },
     { versionName: '1.21.4', channel: 'Скоро', title: 'Версия готовится', source: '', notes: 'Эта версия появится позже.' },
-    { versionName: '1.16.5', channel: 'Сборка 1.16.5', title: 'Royale Master', source: { type: 'github-release-asset', owner: 'SqwaTik', repo: 'Royale-Launcher-Versions', release: 'v1.16.5', asset: '1.16.5.zip', tokenEnv: 'ROYALE_GITHUB_TOKEN' }, notes: 'Клиент Royale Master для Minecraft 1.16.5 (Fabric).' },
+    { versionName: '1.16.5', channel: 'Сборка 1.16.5', title: 'Royale Master', source: { type: 'github-release-asset', owner: 'SqwaTik', repo: 'Royale-Launcher-Versions', release: 'v1.16.5', asset: '1.16.5.zip', tokenEnv: 'ROYALE_GITHUB_TOKEN' }, notes: 'Клиент Royale Master для Minecraft 1.16.5 (Fabric) с отдельной установкой и прямым запуском.' },
     { versionName: '1.12.2', channel: 'Скоро', title: 'Версия готовится', source: '', notes: 'Эта версия появится позже.' }
   ]
 }
@@ -792,6 +792,7 @@ function App() {
   const activeToastRef = useRef(null)
   const heroBackdropTimeoutRef = useRef(null)
   const featureVisualTimeoutRef = useRef(null)
+  const selectedVersionSaveRef = useRef(null)
 
   const [page, setPage] = useState(initialPage)
   const [settings, setSettings] = useState(DEFAULT_SETTINGS)
@@ -855,15 +856,27 @@ function App() {
     activeToastRef.current = activeToast
   }, [activeToast])
 
+  useEffect(() => () => {
+    if (selectedVersionSaveRef.current) {
+      cancelIdleTask(selectedVersionSaveRef.current)
+      selectedVersionSaveRef.current = null
+    }
+  }, [])
+
   useEffect(() => {
-    const preloaders = Object.values(VERSION_ART_IMAGES).map((source) => {
-      const image = new Image()
-      image.decoding = 'async'
-      image.src = source
-      return image
-    })
+    let preloaders = []
+    const idleHandle = requestIdleTask(() => {
+      preloaders = Object.values(VERSION_ART_IMAGES).map((source) => {
+        const image = new Image()
+        image.decoding = 'async'
+        image.loading = 'lazy'
+        image.src = source
+        return image
+      })
+    }, 900)
 
     return () => {
+      cancelIdleTask(idleHandle)
       for (const image of preloaders) {
         image.src = ''
       }
@@ -1480,7 +1493,13 @@ function App() {
     startTransition(() => {
       setSettings(nextSettings)
     })
-    void api.saveSettings(nextSettings).catch(() => {})
+    if (selectedVersionSaveRef.current) {
+      cancelIdleTask(selectedVersionSaveRef.current)
+    }
+    selectedVersionSaveRef.current = requestIdleTask(() => {
+      selectedVersionSaveRef.current = null
+      void api.saveSettings(nextSettings).catch(() => {})
+    }, 260)
     void refreshVersionState(nextVersion).catch(() => {})
   }
 
@@ -2057,8 +2076,8 @@ function App() {
                           className="feature-detail__input"
                           value={draft.playerName || ''}
                           maxLength={16}
-                          placeholder="Ник"
-                          aria-label="Никнейм игрока"
+                          placeholder="Nickname"
+                          aria-label="Nickname"
                           onChange={handlePlayerNameChange}
                           onBlur={handlePlayerNameBlur}
                           onKeyDown={handlePlayerNameKeyDown}

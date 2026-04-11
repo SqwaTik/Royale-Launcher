@@ -17,17 +17,6 @@
         "asset": "royale-1.0.14.jar",
         "tokenEnv": "ROYALE_GITHUB_TOKEN"
       }
-    },
-    {
-      "fileName": "fabric-api-0.42.0+1.16.jar",
-      "source": {
-        "type": "github-release-asset",
-        "owner": "SqwaTik",
-        "repo": "Royale-Launcher-Versions",
-        "release": "v1.16.5",
-        "asset": "fabric-api-0.42.0+1.16.jar",
-        "tokenEnv": "ROYALE_GITHUB_TOKEN"
-      }
     }
   ]
 }
