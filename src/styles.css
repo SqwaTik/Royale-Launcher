@@ -4333,7 +4333,8 @@ input {
 
 .feature-stage__panel {
   padding-bottom: 12px !important;
-  flex: 0 0 auto !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
 }
 
 .feature-stage__action-shell {
