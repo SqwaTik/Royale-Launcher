@@ -276,7 +276,13 @@ const StatsMetricCard = memo(function StatsMetricCard({
   )
 })
 
-const StatsPage = memo(function StatsPage({ api, selectedVersion, hasUpdateBanner = false }) {
+const StatsPage = memo(function StatsPage({
+  api,
+  selectedVersion,
+  hasUpdateBanner = false,
+  versions = [],
+  onSelectVersion = null
+}) {
   const pageRef = useRef(null)
   const chartPanelRef = useRef(null)
   const [dashboard, setDashboard] = useState(EMPTY_DASHBOARD)
@@ -444,6 +450,7 @@ const StatsPage = memo(function StatsPage({ api, selectedVersion, hasUpdateBanne
   )
   const favoriteVersion = deferredDashboard.highlights.favoriteVersion || null
   const gameplayAvailable = Boolean(gameplay.available)
+  const activeVersion = deferredDashboard.selectedVersion || selectedVersion || ''
   const runtimeStatusLabel = useMemo(() => formatRuntimeStatus(gameplay), [gameplay])
   const runtimeServerLabel = useMemo(() => formatRuntimeServer(gameplay), [gameplay])
   const runtimeWorldLabel = useMemo(() => formatRuntimeWorld(gameplay), [gameplay])
@@ -452,10 +459,25 @@ const StatsPage = memo(function StatsPage({ api, selectedVersion, hasUpdateBanne
   const pvpLabel = gameplayAvailable ? formatDuration(gameplay.totals.pvpMs) : UNKNOWN_LABEL
   const afkLabel = gameplayAvailable ? formatDuration(gameplay.totals.afkMs) : UNKNOWN_LABEL
 
+  const versionOptions = useMemo(() => {
+    if (!Array.isArray(versions)) return []
+    return versions
+      .map((entry) => ({
+        name: String(entry?.versionName || '').trim(),
+        label: String(entry?.versionName || '').trim()
+      }))
+      .filter((entry) => entry.name)
+  }, [versions])
+
   function openDetails(event) {
     event.preventDefault()
     event.stopPropagation()
     setPopover({ open: true })
+  }
+
+  function handleVersionSelect(versionName) {
+    if (!versionName || versionName === selectedVersion) return
+    onSelectVersion?.(versionName)
   }
 
 
@@ -465,6 +487,20 @@ const StatsPage = memo(function StatsPage({ api, selectedVersion, hasUpdateBanne
       className={`stats-page page-surface ${hasUpdateBanner ? 'has-update-banner' : ''} ${popover ? 'is-modal-open' : ''}`}
     >
       <div className="stats-page__header">
+        {versionOptions.length > 1 ? (
+          <div className="stats-page__versions" role="tablist" aria-label="Версии клиента">
+            {versionOptions.map((option) => (
+              <button
+                key={option.name}
+                type="button"
+                className={`stats-version ${option.name === activeVersion ? 'is-active' : ''}`}
+                onClick={() => handleVersionSelect(option.name)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <span className="eyebrow">Royale Launcher</span>
         <h1>Статистика</h1>
         <p className="stats-page__lead">

@@ -124,6 +124,7 @@ let runningClientWatcher = null
 let installResumeStateCache = null
 let javaInstallInFlight = null
 const jsonFileCache = new Map()
+let debugLogPath = ''
 
 const APP_ID = 'com.royale.launcher'
 const BUNDLED_VERSION_CATALOG_PATH = path.join(__dirname, 'version-catalog.json')
@@ -574,6 +575,20 @@ function getSettingsPath() {
 
 function getStatsPath() {
   return path.join(app.getPath('userData'), 'launcher-stats.json')
+}
+
+function getDebugLogPath() {
+  if (!debugLogPath) {
+    debugLogPath = path.join(app.getPath('userData'), 'launcher-debug.log')
+  }
+  return debugLogPath
+}
+
+function writeDebugLog(message, payload = null) {
+  try {
+    const line = `[${new Date().toISOString()}] ${String(message || '')}${payload ? ` ${JSON.stringify(payload)}` : ''}\n`
+    fs.appendFileSync(getDebugLogPath(), line, 'utf8')
+  } catch {}
 }
 
 function getInstallResumeStatePath() {
@@ -4092,11 +4107,17 @@ async function launchManagedClient(settings, versionName, installDir, preparedCl
     windowsHide: true
   })
 
+  await waitForChildSpawn(child)
+  if (!child.pid) {
+    throw new Error('Failed to start client process.')
+  }
+
   child.royaleVersionName = versionName
   child.royaleInstallDir = installDir
   trackLaunchedProcess(child, settings)
   child.unref()
 
+  writeDebugLog('launch:spawned', { versionName, pid: child.pid || 0 })
   return {
     ok: true,
     pid: child.pid || 0
@@ -5259,6 +5280,44 @@ function buildJavaArgs(settings, versionName, installDir, launchableFile) {
   return args
 }
 
+async function waitForChildSpawn(child, timeoutMs = 6000) {
+  if (!child) {
+    throw new Error('launch-spawn-failed')
+  }
+
+  if (child.spawned && child.pid) {
+    return child
+  }
+
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      cleanup()
+      reject(new Error('launch-spawn-timeout'))
+    }, timeoutMs)
+
+    function cleanup() {
+      clearTimeout(timer)
+      child.removeListener('error', onError)
+      child.removeListener('spawn', onSpawn)
+    }
+
+    function onError(error) {
+      cleanup()
+      reject(error)
+    }
+
+    function onSpawn() {
+      cleanup()
+      resolve()
+    }
+
+    child.once('error', onError)
+    child.once('spawn', onSpawn)
+  })
+
+  return child
+}
+
 async function startLaunchableFileProcess(settings, version, installDir, launchableFile) {
   const extension = path.extname(launchableFile).toLowerCase()
   const spawnOptions = {
@@ -5271,11 +5330,21 @@ async function startLaunchableFileProcess(settings, version, installDir, launcha
   if (extension === '.jar') {
     const manifest = await loadClientManifest(installDir, version.versionName)
     const javaExecutable = await resolveJavaExecutable(settings, version.versionName, manifest)
-    return spawn(javaExecutable, [...buildJavaArgs(settings, version.versionName, installDir, launchableFile), '-jar', launchableFile], spawnOptions)
+    const child = spawn(javaExecutable, [...buildJavaArgs(settings, version.versionName, installDir, launchableFile), '-jar', launchableFile], spawnOptions)
+    await waitForChildSpawn(child)
+    if (!child.pid) {
+      throw new Error('Failed to start client process.')
+    }
+    return child
   }
 
   if (extension === '.exe') {
-    return spawn(launchableFile, [], spawnOptions)
+    const child = spawn(launchableFile, [], spawnOptions)
+    await waitForChildSpawn(child)
+    if (!child.pid) {
+      throw new Error('Failed to start client process.')
+    }
+    return child
   }
 
   throw new Error('Поддерживаются только .jar и .exe launch-файлы.')
@@ -5392,6 +5461,7 @@ async function launchVersionFlow(versionName) {
 
 async function launchVersionTask(versionName) {
   resetLaunchController()
+  writeDebugLog('launch:start', { versionName })
 
   const checkingClientStatus = '\u041f\u0440\u043e\u0432\u0435\u0440\u044f\u044e \u0437\u0430\u043f\u0443\u0441\u043a \u043a\u043b\u0438\u0435\u043d\u0442\u0430...'
   const checkingLaunchFileStatus = '\u041f\u0440\u043e\u0432\u0435\u0440\u044f\u044e launch-\u0444\u0430\u0439\u043b\u044b...'
@@ -5412,6 +5482,7 @@ async function launchVersionTask(versionName) {
     assertLaunchNotCancelled()
     const clientLaunch = await launchClientInstance(settings, version.versionName, installDir)
     if (clientLaunch?.ok) {
+      writeDebugLog('launch:managed', { versionName, pid: clientLaunch.pid || 0 })
       await recordLauncherEvent('launch_success', { versionName: version.versionName })
       return clientLaunch
     }
@@ -5432,10 +5503,12 @@ async function launchVersionTask(versionName) {
     child.royaleInstallDir = installDir
     trackLaunchedProcess(child, settings)
     child.unref()
+    writeDebugLog('launch:spawned', { versionName, pid: child.pid || 0 })
     await recordLauncherEvent('launch_success', { versionName: version.versionName })
     return { ok: true, pid: child.pid || 0 }
   } catch (error) {
     setLaunchStatus('')
+    writeDebugLog('launch:error', { versionName, message: error instanceof Error ? error.message : String(error || '') })
     await recordLauncherEvent('launch_failure', {
       versionName,
       message: error instanceof Error ? error.message : String(error || '')
