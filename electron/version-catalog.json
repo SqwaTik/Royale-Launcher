@@ -45,7 +45,7 @@
     },
     "notes": "Клиент Royale Master для Minecraft 1.16.5 (Fabric) с отдельной установкой и прямым запуском.",
     "javaVersion": 17,
-    "clientRevision": "royale-1.0.14-1.16.5-r11"
+    "clientRevision": "royale-1.0.14-1.16.5-r12"
   },
   {
     "versionName": "1.12.2",

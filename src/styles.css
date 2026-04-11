@@ -4439,3 +4439,52 @@ input {
 .feature-stage__visual-image {
   animation-duration: 520ms;
 }
+
+.version-dock__list {
+  contain: content;
+}
+
+.soft-button,
+.primary-action,
+.icon-action,
+.window-button,
+.version-item {
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    opacity 120ms ease;
+  will-change: auto;
+}
+
+.soft-button:hover:not(:disabled),
+.primary-action:hover:not(:disabled),
+.update-banner__button:hover,
+.icon-action:hover {
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.crash-modal__body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.crash-modal__body::-webkit-scrollbar-track {
+  background: rgba(10, 14, 20, 0.4);
+  border-radius: 999px;
+}
+
+.crash-modal__body::-webkit-scrollbar-thumb {
+  background: rgba(255, 214, 132, 0.28);
+  border-radius: 999px;
+  border: 1px solid rgba(255, 214, 132, 0.35);
+}
+
+.crash-modal__body::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 214, 132, 0.4);
+}
+
+.crash-modal__body {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 214, 132, 0.38) rgba(10, 14, 20, 0.4);
+}

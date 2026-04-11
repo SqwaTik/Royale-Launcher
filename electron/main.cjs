@@ -1927,6 +1927,8 @@ async function ensureManagedModsFromManifest(manifest, gameDir, options = {}) {
     resolvedFiles.push(targetPath)
   }
 
+  const keepNames = new Set(entries.map((entry) => entry.fileName))
+  await pruneManagedRuntimeMods(gameDir, keepNames)
   await normalizeManagedRuntimeVisibility(gameDir)
 
   const runtimeModFiles = listManagedRuntimeModFiles(gameDir)
@@ -2116,6 +2118,23 @@ async function removeManagedRuntimeModJars(targetModsDir) {
     const entries = await fsp.readdir(targetModsDir, { withFileTypes: true })
     await Promise.all(entries
       .filter((entry) => entry.isFile() && isManagedRuntimeModFile(entry.name))
+      .map((entry) => fsp.rm(path.join(targetModsDir, entry.name), { force: true })))
+  } catch {}
+}
+
+async function pruneManagedRuntimeMods(gameDir, keepFileNames = new Set()) {
+  try {
+    const targetModsDir = resolveManagedRuntimeModsDir(gameDir)
+    if (!targetModsDir || !fs.existsSync(targetModsDir)) {
+      return
+    }
+
+    const entries = await fsp.readdir(targetModsDir, { withFileTypes: true })
+    const keep = new Set([...keepFileNames].map((name) => String(name || '').trim()).filter(Boolean))
+    const shouldKeep = (name) => keep.has(name) || /^fabric-api-.*\.jar$/i.test(name)
+
+    await Promise.all(entries
+      .filter((entry) => entry.isFile() && isManagedRuntimeModFile(entry.name) && !shouldKeep(entry.name))
       .map((entry) => fsp.rm(path.join(targetModsDir, entry.name), { force: true })))
   } catch {}
 }
