@@ -4197,8 +4197,9 @@ input {
   display: grid;
   place-items: center;
   background: rgba(4, 7, 12, 0.76);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  contain: layout paint;
 }
 
 .crash-modal {
@@ -4211,7 +4212,9 @@ input {
   border-radius: 24px;
   background: linear-gradient(180deg, rgba(16, 22, 31, 0.98), rgba(10, 14, 20, 0.98));
   border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 20px 54px rgba(0, 0, 0, 0.45);
+  user-select: text;
+  contain: layout paint;
 }
 
 .crash-modal__head {
@@ -4237,6 +4240,7 @@ input {
   color: rgba(255, 255, 255, 0.6);
   font-size: 12px;
   word-break: break-all;
+  user-select: text;
 }
 
 .crash-modal__actions {
@@ -4255,6 +4259,8 @@ input {
   line-height: 1.5;
   overflow: auto;
   white-space: pre-wrap;
+  user-select: text;
+  overscroll-behavior: contain;
 }
 
 .feature-stage {

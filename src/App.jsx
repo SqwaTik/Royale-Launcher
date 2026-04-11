@@ -425,7 +425,7 @@ const ConfirmModal = memo(function ConfirmModal({
   )
 })
 
-const CrashModal = memo(function CrashModal({ report, onClose, onOpenFolder }) {
+const CrashModal = memo(function CrashModal({ report, onClose, onOpenFolder, onCopy }) {
   return (
     <div className="crash-backdrop" role="presentation">
       <div
@@ -447,6 +447,7 @@ const CrashModal = memo(function CrashModal({ report, onClose, onOpenFolder }) {
         ) : null}
         <div className="crash-modal__actions">
           <button className="soft-button" type="button" onClick={onOpenFolder}>Открыть папку</button>
+          <button className="soft-button" type="button" onClick={onCopy}>Скопировать</button>
         </div>
         <pre className="crash-modal__body">{report?.body || ''}</pre>
       </div>
@@ -2370,6 +2371,16 @@ function App() {
               : ''
             if (target) {
               api.openFolder(target)
+            }
+          }}
+          onCopy={async () => {
+            const text = crashReport?.body || ''
+            if (!text) return
+            try {
+              await navigator.clipboard.writeText(text)
+              enqueueToast({ title: 'Скопировано', message: 'Отчёт об ошибке в буфере обмена' }, 'success', 'crash-copy')
+            } catch {
+              enqueueToast({ title: 'Ошибка', message: 'Не удалось скопировать отчёт' }, 'error', 'crash-copy-failed')
             }
           }}
         />

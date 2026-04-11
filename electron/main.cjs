@@ -457,7 +457,7 @@ const DEFAULT_VERSION_CATALOG = [
       tokenEnv: 'ROYALE_GITHUB_TOKEN'
     },
     javaVersion: 17,
-    clientRevision: 'royale-1.0.14-1.16.5-r6',
+    clientRevision: 'royale-1.0.14-1.16.5-r8',
     notes: 'Клиент Royale Master для Minecraft 1.16.5 (Fabric) с отдельной установкой и прямым запуском.'
   },
   {
