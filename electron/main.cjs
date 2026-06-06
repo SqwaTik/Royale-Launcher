@@ -457,7 +457,7 @@ const DEFAULT_VERSION_CATALOG = [
       tokenEnv: 'ROYALE_GITHUB_TOKEN'
     },
     javaVersion: 17,
-    clientRevision: 'royale-1.0.14-1.16.5-r14',
+    clientRevision: 'royale-1.0.14-1.16.5-r15',
     notes: 'Клиент Royale Master для Minecraft 1.16.5 (Fabric) с отдельной установкой и прямым запуском.'
   },
   {
@@ -531,13 +531,13 @@ const DEFAULT_MANAGED_MODS = {
   ],
   '1.16.5': [
     {
-      fileName: 'royale-1.0.14-r2.jar',
+      fileName: 'royale-1.0.14.jar',
       source: {
         type: 'github-release-asset',
         owner: 'SqwaTik',
         repo: 'Royale-Launcher-Versions',
         release: 'v1.16.5',
-        asset: 'royale-1.0.14-r2.jar',
+        asset: 'royale-1.0.14.jar',
         tokenEnv: 'ROYALE_GITHUB_TOKEN'
       }
     },
