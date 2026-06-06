@@ -1446,6 +1446,7 @@ function App() {
   }
 
   async function ensureJavaReadyForLaunch(versionName) {
+    setStatusText('Проверяю Java...')
     let javaStatus = await api.getJavaStatus(versionName)
     if (javaStatus?.available) {
       return true
@@ -1582,32 +1583,36 @@ function App() {
       return
     }
 
-    if (nextActionMode === 'launch') {
-      const javaReady = await ensureJavaReadyForLaunch(selectedVersion)
-      if (!javaReady) {
-        return
-      }
-    }
-
     setBusy(true)
     setActionMode(nextActionMode)
     setStatusText('')
     if (!(nextActionMode === 'install' && hasPendingInstall)) {
       setInstallProgress(DEFAULT_PROGRESS)
     }
+    const shouldAutoLaunchAfterInstall = nextActionMode === 'install' && versionState.installed && versionState.updateAvailable
 
     try {
       if (nextActionMode === 'launch') {
+        const javaReady = await ensureJavaReadyForLaunch(selectedVersion)
+        if (!javaReady) {
+          return
+        }
         await api.launchVersion(selectedVersion)
         setStatusText('')
         await refreshVersionState(selectedVersion)
       } else {
         await api.installVersion(selectedVersion)
         await refreshVersionState(selectedVersion)
-        enqueueToast({
-          title: 'Установлено',
-          message: 'Клиент готов к запуску'
-        }, 'success', `installed-${selectedVersion}`)
+        if (shouldAutoLaunchAfterInstall) {
+          await api.launchVersion(selectedVersion)
+          setStatusText('')
+          await refreshVersionState(selectedVersion)
+        } else {
+          enqueueToast({
+            title: 'Установлено',
+            message: 'Клиент готов к запуску'
+          }, 'success', `installed-${selectedVersion}`)
+        }
       }
     } catch (error) {
       const message = normalizeRemoteErrorMessage(error?.message)
