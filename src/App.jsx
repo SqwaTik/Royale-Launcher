@@ -23,7 +23,7 @@ const DEFAULT_SETTINGS = {
   skipCancelConfirm: false,
   skipJavaPromptVersions: [],
   versions: [
-    { versionName: '1.21.11', channel: 'Основная сборка', title: 'Royale Master', source: { type: 'github-release-asset', owner: 'SqwaTik', repo: 'Royale-Launcher-Versions', release: 'latest', asset: '1.21.11.zip', tokenEnv: 'ROYALE_GITHUB_TOKEN' }, notes: 'Клиент Royale Master для Minecraft 1.21.11 с отдельной установкой и прямым запуском.' },
+    { versionName: '1.21.11', channel: 'Основная сборка', title: 'Royale Master', source: { type: 'github-release-asset', owner: 'SqwaTik', repo: 'Royale-Launcher-Versions', release: 'v1.21.11', asset: '1.21.11.zip', tokenEnv: 'ROYALE_GITHUB_TOKEN' }, notes: 'Клиент Royale Master для Minecraft 1.21.11 с отдельной установкой и прямым запуском.' },
     { versionName: '26.1', channel: 'Скоро', title: 'Версия готовится', source: '', notes: 'Эта версия появится позже.' },
     { versionName: '1.21.4', channel: 'Скоро', title: 'Версия готовится', source: '', notes: 'Эта версия появится позже.' },
     { versionName: '1.16.5', channel: 'Сборка 1.16.5', title: 'Royale Master', source: { type: 'github-release-asset', owner: 'SqwaTik', repo: 'Royale-Launcher-Versions', release: 'v1.16.5', asset: '1.16.5.zip', tokenEnv: 'ROYALE_GITHUB_TOKEN' }, notes: 'Клиент Royale Master для Minecraft 1.16.5 (Fabric) с отдельной установкой и прямым запуском.' },
@@ -183,7 +183,7 @@ const DEFAULT_STATS_DASHBOARD = {
   recent: []
 }
 
-const DEFAULT_APP_VERSION = '1.0.14'
+const DEFAULT_APP_VERSION = '1.0.15'
 
 const HERO_FACTS = [
   'Факт Royale: хороший лаунчер должен исчезать в тень, а не мешать запуску мира.',
@@ -207,12 +207,12 @@ const VERSION_ART = {
   '1.21.4': {
     tone: 'alt',
     image: VERSION_ART_IMAGES['1.21.4'],
-    position: 'center 34%'
+    position: 'center 38%'
   },
   '1.16.5': {
     tone: 'legacy',
     image: VERSION_ART_IMAGES['1.16.5'],
-    position: 'center 28%'
+    position: 'center 34%'
   },
   '1.12.2': {
     tone: 'classic',
@@ -871,7 +871,7 @@ function App() {
   )
   const selectedArt = VERSION_ART[selectedVersion] || VERSION_ART['1.21.11']
   const shouldPollVersionState = page === 'home' || versionState.running || showCloseLauncherPrompt
-  const shellLiteMode = lowPerformanceMode || page === 'settings' || !showVersionArt
+  const shellLiteMode = lowPerformanceMode || page === 'settings' || page === 'stats' || busy || !showVersionArt
   const heroFact = MINECRAFT_FACTS[heroFactIndex % MINECRAFT_FACTS.length]
   const hasPendingInstall = Boolean(versionState.pendingInstall && !versionState.installed)
   const pendingInstallPaused = Boolean(hasPendingInstall && versionState.pendingInstall?.paused)
@@ -1372,7 +1372,7 @@ function App() {
   }, [api, settings.installFolder, page, bootstrapped])
 
   useEffect(() => {
-    if (page !== 'home' || lowPerformanceMode) {
+    if (page !== 'home' || lowPerformanceMode || busy) {
       setShowVersionArt(false)
       return undefined
     }
@@ -1385,7 +1385,7 @@ function App() {
     return () => {
       cancelIdleTask(idleHandle)
     }
-  }, [page, bootstrapped, lowPerformanceMode])
+  }, [page, bootstrapped, lowPerformanceMode, busy])
 
   useEffect(() => {
     if (busy || !shouldPollVersionState) return undefined

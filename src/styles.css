@@ -4488,3 +4488,118 @@ input {
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 214, 132, 0.38) rgba(10, 14, 20, 0.4);
 }
+
+.hero {
+  grid-template-columns: minmax(350px, 0.88fr) minmax(540px, 1.16fr);
+  gap: 18px;
+}
+
+.settings,
+.stats-page,
+.catalog-list,
+.version-dock__list,
+.feature-stage__panel {
+  contain: content;
+  scroll-behavior: auto;
+}
+
+.feature-stage__overlay {
+  padding: 14px 14px 16px;
+}
+
+.feature-stage__panel {
+  width: calc(100% - 8px);
+  max-width: calc(100% - 8px);
+  margin: 6px auto;
+  padding: 14px 16px 16px;
+  contain: content;
+}
+
+.feature-stage__visual {
+  min-height: 146px;
+  flex: 0 0 146px;
+}
+
+.feature-stage__art,
+.hero__backdrop,
+.feature-stage__visual-image {
+  will-change: auto;
+}
+
+.hero__backdrop {
+  filter: blur(6px) saturate(0.94);
+}
+
+.hero__backdrop--current,
+.hero__backdrop--previous,
+.feature-stage__visual-image--current,
+.feature-stage__visual-image--previous {
+  animation-duration: 220ms;
+}
+
+.feature-stage__art {
+  transition: background 240ms ease, opacity 180ms ease;
+}
+
+.hero__backdrop,
+.feature-stage__visual-image {
+  transition-duration: 180ms;
+}
+
+.icon-action {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.stats-version-row.is-active {
+  border-color: rgba(255, 213, 129, 0.22);
+  background: linear-gradient(180deg, rgba(255, 239, 204, 0.08), rgba(255, 156, 80, 0.05));
+}
+
+.stats-panel__split {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.92fr);
+}
+
+.settings-card,
+.version-item,
+.catalog-row,
+.stats-card,
+.stats-panel {
+  contain: layout paint style;
+  content-visibility: auto;
+}
+
+.settings-card,
+.version-item,
+.catalog-row {
+  contain-intrinsic-size: 132px;
+}
+
+.stats-card,
+.stats-panel {
+  contain-intrinsic-size: 220px;
+}
+
+.stats-page {
+  scroll-behavior: auto;
+}
+
+.stats-panel__meta,
+.version-item__state,
+.catalog-row__state,
+.section-label,
+.section-label--fact,
+.feature-detail span,
+.stats-card__label,
+.stats-period__label,
+.stats-feed__head span,
+.stats-breakdown__copy span {
+  text-rendering: auto;
+}
+
+@media (max-width: 1200px) {
+  .feature-stage__panel {
+    width: 100%;
+    max-width: 100%;
+  }
+}

@@ -81,7 +81,9 @@ const EMPTY_DASHBOARD = {
     lastLaunchAt: '',
     firstSeenAt: ''
   },
-  timeline: []
+  timeline: [],
+  versions: [],
+  recent: []
 }
 
 const UNKNOWN_LABEL = 'Unknown'
@@ -188,6 +190,16 @@ function formatPercent(value, total) {
   if (safeValue <= 0) return 0
   const safeTotal = Math.max(1, Number(total) || 0)
   return Math.max(10, Math.round((safeValue / safeTotal) * 100))
+}
+
+function formatRate(value, total, fallback = '0%') {
+  const safeTotal = Math.max(0, Number(total) || 0)
+  if (safeTotal <= 0) {
+    return fallback
+  }
+
+  const safeValue = Math.max(0, Number(value) || 0)
+  return `${Math.round((safeValue / safeTotal) * 100)}%`
 }
 
 function getGameplayRows(stats) {
@@ -415,26 +427,15 @@ const StatsPage = memo(function StatsPage({
     }
 
     const previousOverflow = pageNode.style.overflowY
-    const preventScroll = (event) => {
-      event.preventDefault()
-    }
 
     pageNode.style.overflowY = 'clip'
     document.body.style.overflow = 'hidden'
     document.documentElement.style.overflow = 'hidden'
-    pageNode.addEventListener('wheel', preventScroll, { passive: false })
-    pageNode.addEventListener('touchmove', preventScroll, { passive: false })
-    window.addEventListener('wheel', preventScroll, { passive: false })
-    window.addEventListener('touchmove', preventScroll, { passive: false })
 
     return () => {
       pageNode.style.overflowY = previousOverflow
       document.body.style.overflow = previousBodyOverflow
       document.documentElement.style.overflow = previousDocumentOverflow
-      pageNode.removeEventListener('wheel', preventScroll)
-      pageNode.removeEventListener('touchmove', preventScroll)
-      window.removeEventListener('wheel', preventScroll)
-      window.removeEventListener('touchmove', preventScroll)
     }
   }, [popover])
 
@@ -448,6 +449,8 @@ const StatsPage = memo(function StatsPage({
     () => Math.max(1, ...timeline.map((entry) => entry.launches + entry.installs + entry.failures)),
     [timeline]
   )
+  const versionRows = useMemo(() => Array.isArray(deferredDashboard.versions) ? deferredDashboard.versions : [], [deferredDashboard.versions])
+  const recentEvents = useMemo(() => Array.isArray(deferredDashboard.recent) ? deferredDashboard.recent : [], [deferredDashboard.recent])
   const favoriteVersion = deferredDashboard.highlights.favoriteVersion || null
   const gameplayAvailable = Boolean(gameplay.available)
   const activeVersion = deferredDashboard.selectedVersion || selectedVersion || ''
@@ -455,9 +458,12 @@ const StatsPage = memo(function StatsPage({
   const runtimeServerLabel = useMemo(() => formatRuntimeServer(gameplay), [gameplay])
   const runtimeWorldLabel = useMemo(() => formatRuntimeWorld(gameplay), [gameplay])
   const playtimeLabel = gameplayAvailable ? formatDuration(gameplay.totals.playtimeMs) : UNKNOWN_LABEL
-  const activeLabel = gameplayAvailable ? formatDuration(gameplay.totals.activeMs) : UNKNOWN_LABEL
-  const pvpLabel = gameplayAvailable ? formatDuration(gameplay.totals.pvpMs) : UNKNOWN_LABEL
-  const afkLabel = gameplayAvailable ? formatDuration(gameplay.totals.afkMs) : UNKNOWN_LABEL
+  const averageSessionLabel = gameplayAvailable && gameplay.totals.sessions > 0
+    ? formatDuration(gameplay.totals.playtimeMs / gameplay.totals.sessions)
+    : UNKNOWN_LABEL
+  const launchAttempts = Math.max(0, Number(deferredDashboard.totals.launches) || 0) + Math.max(0, Number(deferredDashboard.totals.failures) || 0)
+  const successRateLabel = formatRate(deferredDashboard.totals.launches, launchAttempts, '100%')
+  const versionMax = useMemo(() => Math.max(1, ...versionRows.map((row) => row.total || 0)), [versionRows])
 
   const versionOptions = useMemo(() => {
     if (!Array.isArray(versions)) return []
@@ -524,24 +530,24 @@ const StatsPage = memo(function StatsPage({
         />
         <StatsMetricCard
           tone="green"
-          label="Активно"
-          value={activeLabel}
-          title="Без AFK"
-          hint="Время с действиями игрока"
+          label="Средняя сессия"
+          value={averageSessionLabel}
+          title="Среднее время за заход"
+          hint={`Сессий в версии: ${gameplay.totals.sessions || 0}`}
         />
         <StatsMetricCard
           tone="amber"
-          label="PvP"
-          value={pvpLabel}
-          title="Боевые сессии"
-          hint={`Входов в бой: ${gameplay.totals.combatEntries || 0}`}
+          label="Успешность"
+          value={successRateLabel}
+          title="Запуски без ошибок"
+          hint={`${deferredDashboard.totals.launches || 0} успешных · ${deferredDashboard.totals.failures || 0} с ошибкой`}
         />
         <StatsMetricCard
           tone="red"
-          label="AFK"
-          value={afkLabel}
-          title="Паузы и бездействие"
-          hint={`Сессий: ${gameplay.totals.sessions || 0}`}
+          label="Активные дни"
+          value={String(deferredDashboard.highlights.activeDays || 0)}
+          title="Дней с активностью"
+          hint={`Последний запуск: ${formatDateTime(deferredDashboard.highlights.lastLaunchAt)}`}
         />
       </div>
 
@@ -550,7 +556,7 @@ const StatsPage = memo(function StatsPage({
           <div className="stats-panel__head">
             <div>
               <span className="section-label">Игровая активность</span>
-              <h3>По состояниям</h3>
+              <h3>Выбранная версия</h3>
             </div>
             <div className="stats-panel__actions">
               <span className="stats-panel__meta">
@@ -559,43 +565,62 @@ const StatsPage = memo(function StatsPage({
             </div>
           </div>
 
-          <div className="stats-breakdown">
-            {statusRows.map((row) => (
-              <div key={row.key} className="stats-breakdown__row">
-                <div className="stats-breakdown__copy">
-                  <strong>{row.label}</strong>
-                  <span>{formatDuration(row.value)}</span>
-                </div>
-                <div className="stats-breakdown__track">
-                  <span
-                    className={`stats-breakdown__fill stats-breakdown__fill--${row.key}`}
-                    style={{ width: `${formatPercent(row.value, maxStatusValue)}%` }}
-                  />
-                </div>
+          <div className="stats-panel__split">
+            <div className="stats-panel__section">
+              <div className="stats-panel__subhead">
+                <strong>Разбивка времени</strong>
+                <span>{gameplayAvailable ? 'Состояния из игровой статистики' : 'Появится после первого запуска'}</span>
               </div>
-            ))}
-          </div>
 
-          <div className="stats-highlights">
-            <div className="stats-feed__item stats-feed__item--compact">
-              <div className="stats-feed__head">
-                <strong>Сейчас</strong>
-                <span>{runtimeStatusLabel}</span>
+              <div className="stats-breakdown">
+                {statusRows.map((row) => (
+                  <div key={row.key} className="stats-breakdown__row">
+                    <div className="stats-breakdown__copy">
+                      <strong>{row.label}</strong>
+                      <span>{formatDuration(row.value)}</span>
+                    </div>
+                    <div className="stats-breakdown__track">
+                      <span
+                        className={`stats-breakdown__fill stats-breakdown__fill--${row.key}`}
+                        style={{ width: `${formatPercent(row.value, maxStatusValue)}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div className="stats-feed__body">
-                {gameplay.runtime.isInWorld ? (
-                  <>
-                    <p>Сервер: {runtimeServerLabel}</p>
-                    <p>Мир: {runtimeWorldLabel}</p>
-                    <p>
-                      AFK: {gameplay.runtime.isAfk ? 'Да' : 'Нет'}
-                      {' · '}
-                      PvP: {gameplay.runtime.isInPvp ? 'Да' : 'Нет'}
-                    </p>
-                  </>
-                ) : (
-                  <p>Игровая сессия сейчас не активна.</p>
-                )}
+            </div>
+
+            <div className="stats-panel__section">
+              <div className="stats-feed stats-feed--compact">
+                <div className="stats-feed__item stats-feed__item--compact">
+                  <div className="stats-feed__head">
+                    <strong>Сейчас</strong>
+                    <span>{runtimeStatusLabel}</span>
+                  </div>
+                  <div className="stats-feed__body">
+                    {gameplay.runtime.isInWorld ? (
+                      <>
+                        <p>Сервер: {runtimeServerLabel}</p>
+                        <p>Мир: {runtimeWorldLabel}</p>
+                        <p>AFK: {gameplay.runtime.isAfk ? 'Да' : 'Нет'} · PvP: {gameplay.runtime.isInPvp ? 'Да' : 'Нет'}</p>
+                      </>
+                    ) : (
+                      <p>Игровая сессия сейчас не активна.</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="stats-feed__item stats-feed__item--compact">
+                  <div className="stats-feed__head">
+                    <strong>По версии</strong>
+                    <span>{activeVersion || UNKNOWN_LABEL}</span>
+                  </div>
+                  <div className="stats-feed__body">
+                    <p>Сессий: {gameplay.totals.sessions || 0}</p>
+                    <p>Активно без AFK: {gameplayAvailable ? formatDuration(gameplay.totals.activeMs) : UNKNOWN_LABEL}</p>
+                    <p>PvP-входов: {gameplay.totals.combatEntries || 0}</p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -616,12 +641,12 @@ const StatsPage = memo(function StatsPage({
             <div className="stats-period">
               <span className="stats-period__label">Сегодня</span>
               <strong>{deferredDashboard.periods.today.launches}</strong>
-              <span>запусков · {deferredDashboard.periods.today.installs} установок</span>
+              <span>запусков · {deferredDashboard.periods.today.failures} ошибок</span>
             </div>
             <div className="stats-period">
               <span className="stats-period__label">Месяц</span>
               <strong>{deferredDashboard.periods.month.launches}</strong>
-              <span>запусков · {deferredDashboard.periods.month.failures} ошибок</span>
+              <span>запусков · {deferredDashboard.periods.month.installs} установок</span>
             </div>
             <div className="stats-period">
               <span className="stats-period__label">За всё время</span>
@@ -652,7 +677,83 @@ const StatsPage = memo(function StatsPage({
                 <p>Последний запуск: {formatDateTime(deferredDashboard.highlights.lastLaunchAt)}</p>
               </div>
             </div>
+
+            <div className="stats-feed__item stats-feed__item--compact">
+              <div className="stats-feed__head">
+                <strong>История</strong>
+                <span>{formatDateTime(deferredDashboard.highlights.firstSeenAt)}</span>
+              </div>
+              <div className="stats-feed__body">
+                <p>Первое зафиксированное событие лаунчера</p>
+                <p>Установок: {deferredDashboard.totals.installs || 0}</p>
+              </div>
+            </div>
           </div>
+        </article>
+
+        <article className="stats-panel">
+          <div className="stats-panel__head">
+            <div>
+              <span className="section-label">Версии</span>
+              <h3>Что используется чаще</h3>
+            </div>
+            <span className="stats-panel__meta">По всем событиям лаунчера</span>
+          </div>
+
+          {versionRows.length > 0 ? (
+            <div className="stats-versions">
+              {versionRows.map((row) => (
+                <div key={row.versionName} className={`stats-version-row ${row.versionName === activeVersion ? 'is-active' : ''}`}>
+                  <div className="stats-version-row__copy">
+                    <strong>{row.versionName}</strong>
+                    <span>{row.title || row.channel || 'Royale Master'}</span>
+                  </div>
+                  <div className="stats-version-row__track">
+                    <div
+                      className="stats-version-row__fill"
+                      style={{ width: `${formatPercent(row.total || 0, versionMax)}%` }}
+                    />
+                  </div>
+                  <div className="stats-version-row__meta">
+                    <span>Запусков: {row.launches || 0}</span>
+                    <span>Ошибок: {row.failures || 0}</span>
+                    <span>Успешность: {row.successRate || 0}%</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="stats-empty">Рейтинг версий появится после установок и запусков.</p>
+          )}
+        </article>
+
+        <article className="stats-panel">
+          <div className="stats-panel__head">
+            <div>
+              <span className="section-label">События</span>
+              <h3>Последняя активность</h3>
+            </div>
+            <span className="stats-panel__meta">8 последних действий</span>
+          </div>
+
+          {recentEvents.length > 0 ? (
+            <div className="stats-feed">
+              {recentEvents.map((entry) => (
+                <div key={entry.id} className="stats-feed__item stats-feed__item--compact">
+                  <div className="stats-feed__head">
+                    <strong>{entry.label || 'Событие'}</strong>
+                    <span>{entry.atLabel || formatDateTime(entry.at)}</span>
+                  </div>
+                  <div className="stats-feed__body">
+                    <p>Версия: {entry.versionName || 'Лаунчер'}</p>
+                    <p>{entry.message || 'Без дополнительного сообщения.'}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="stats-empty">История событий появится после первого использования лаунчера.</p>
+          )}
         </article>
 
         <article ref={chartPanelRef} className="stats-panel stats-panel--wide stats-panel--deferred">
@@ -684,13 +785,13 @@ const StatsPage = memo(function StatsPage({
               </div>
 
               <div className="stats-legend">
-                <span><i className="stats-legend__swatch stats-legend__swatch--launch" /> Дневная активность</span>
+                <span><i className="stats-legend__swatch stats-legend__swatch--launch" /> Запуски и установки</span>
                 <span><i className="stats-legend__swatch stats-legend__swatch--failure" /> Ошибки запуска</span>
                 <span><i className="stats-legend__swatch stats-legend__swatch--session" /> Игровые сессии</span>
               </div>
             </div>
           ) : chartReady && chartVisible ? (
-            <p className="stats-empty">Unknown</p>
+            <p className="stats-empty">За последние 7 дней пока нет событий.</p>
           ) : (
             <div className="stats-chart-placeholder" aria-hidden="true" />
           )}

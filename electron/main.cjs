@@ -421,7 +421,7 @@ const DEFAULT_VERSION_CATALOG = [
       type: 'github-release-asset',
       owner: 'SqwaTik',
       repo: 'Royale-Launcher-Versions',
-      release: 'latest',
+      release: 'v1.21.11',
       asset: '1.21.11.zip',
       tokenEnv: 'ROYALE_GITHUB_TOKEN'
     },
@@ -457,7 +457,7 @@ const DEFAULT_VERSION_CATALOG = [
       tokenEnv: 'ROYALE_GITHUB_TOKEN'
     },
     javaVersion: 17,
-    clientRevision: 'royale-1.0.14-1.16.5-r10',
+    clientRevision: 'royale-1.0.14-1.16.5-r12',
     notes: 'Клиент Royale Master для Minecraft 1.16.5 (Fabric) с отдельной установкой и прямым запуском.'
   },
   {
@@ -476,7 +476,7 @@ const SHARED_MINECRAFT_DIRS = ['versions', 'libraries', 'assets', 'jre']
 const PACKAGED_SHARED_RUNTIME_DIRS = ['versions', 'libraries', 'assets', 'jre']
 const SHARED_INSTANCE_LINKS = ['versions', 'libraries']
 const SHARED_MINECRAFT_FILES = ['authlib-injection.json', 'launcher_profiles.json']
-const MANAGED_RUNTIME_MOD_PATTERNS = [/^royale-.*\.jar$/i, /^fabric-api-.*\.jar$/i]
+const MANAGED_RUNTIME_MOD_PATTERNS = [/^royale-.*\.jar$/i, /^fabric-api-.*\.jar$/i, /^viafabricplus-.*\.jar$/i]
 const INSTALL_SOURCE_EXCLUDES = new Set([
   CLIENT_MANIFEST_FILE,
   'instance.json',
@@ -493,6 +493,67 @@ const INSTALL_SOURCE_EXCLUDES = new Set([
   'debug-profile.json',
   'usercache.json'
 ])
+const DEFAULT_MANAGED_MODS = {
+  '1.21.11': [
+    {
+      fileName: 'royale-1.0.14.jar',
+      source: {
+        type: 'github-release-asset',
+        owner: 'SqwaTik',
+        repo: 'Royale-Launcher-Versions',
+        release: 'v1.21.11',
+        asset: 'royale-1.0.14.jar',
+        tokenEnv: 'ROYALE_GITHUB_TOKEN'
+      }
+    },
+    {
+      fileName: 'viafabricplus-4.4.8.jar',
+      source: {
+        type: 'github-release-asset',
+        owner: 'SqwaTik',
+        repo: 'Royale-Launcher-Versions',
+        release: 'v1.21.11',
+        asset: 'viafabricplus-4.4.8.jar',
+        tokenEnv: 'ROYALE_GITHUB_TOKEN'
+      }
+    },
+    {
+      fileName: 'fabric-api-0.141.2+1.21.11.jar',
+      source: {
+        type: 'github-release-asset',
+        owner: 'SqwaTik',
+        repo: 'Royale-Launcher-Versions',
+        release: 'v1.21.11',
+        asset: 'fabric-api-0.141.2+1.21.11.jar',
+        tokenEnv: 'ROYALE_GITHUB_TOKEN'
+      }
+    }
+  ],
+  '1.16.5': [
+    {
+      fileName: 'royale-1.0.14-r2.jar',
+      source: {
+        type: 'github-release-asset',
+        owner: 'SqwaTik',
+        repo: 'Royale-Launcher-Versions',
+        release: 'v1.16.5',
+        asset: 'royale-1.0.14-r2.jar',
+        tokenEnv: 'ROYALE_GITHUB_TOKEN'
+      }
+    },
+    {
+      fileName: 'fabric-api-0.42.0+1.16.jar',
+      source: {
+        type: 'github-release-asset',
+        owner: 'SqwaTik',
+        repo: 'Royale-Launcher-Versions',
+        release: 'v1.16.5',
+        asset: 'fabric-api-0.42.0+1.16.jar',
+        tokenEnv: 'ROYALE_GITHUB_TOKEN'
+      }
+    }
+  ]
+}
 const DEFAULT_CLIENT_MANIFESTS = {
   '1.21.11': {
     type: 'fabric-instance',
@@ -501,7 +562,8 @@ const DEFAULT_CLIENT_MANIFESTS = {
     fabricLoaderVersion: '0.18.4',
     gameDir: '.',
     icon: 'Grass',
-    javaVersion: 21
+    javaVersion: 21,
+    managedMods: DEFAULT_MANAGED_MODS['1.21.11']
   },
   '26.1': {
     type: 'fabric-instance',
@@ -528,7 +590,8 @@ const DEFAULT_CLIENT_MANIFESTS = {
     fabricLoaderVersion: '0.18.4',
     gameDir: '.',
     icon: 'Grass',
-    javaVersion: 17
+    javaVersion: 17,
+    managedMods: DEFAULT_MANAGED_MODS['1.16.5']
   },
   '1.12.2': {
     type: 'fabric-instance',
@@ -1322,14 +1385,33 @@ async function getStatsDashboard(versionName = '') {
     })
     .map((entry) => ({
       ...entry,
-      total: entry.launches + entry.installs + entry.failures
+      total: entry.launches + entry.installs + entry.failures,
+      successRate: entry.launches + entry.failures > 0
+        ? Math.round((entry.launches / (entry.launches + entry.failures)) * 100)
+        : 100
     }))
 
   const peakLaunchDay = timeline.reduce((best, entry) => (entry.launches > (best?.launches || 0) ? entry : best), null)
   const favoriteVersion = versionRows[0] || null
-  const activeDays = timeline.filter((entry) => entry.launches || entry.installs || entry.failures || entry.sessions).length
+  const activeDays = new Set(
+    events
+      .filter((entry) => entry.type === 'launch_success' || entry.type === 'install_success' || entry.type === 'session_start' || entry.type.endsWith('_failure'))
+      .map((entry) => toDayKey(entry.at))
+  ).size
   const lastLaunch = [...events].reverse().find((entry) => entry.type === 'launch_success')
   const firstSeen = events[0] || null
+  const recent = [...events]
+    .reverse()
+    .slice(0, 8)
+    .map((entry) => ({
+      id: entry.id,
+      type: entry.type,
+      label: getStatsEventLabel(entry.type),
+      versionName: entry.versionName || '',
+      message: entry.message || '',
+      at: entry.at,
+      atLabel: formatRecentDateLabel(entry.at)
+    }))
 
   statsDashboardCache = {
     generatedAt: new Date(now).toISOString(),
@@ -1353,7 +1435,9 @@ async function getStatsDashboard(versionName = '') {
       lastLaunchAt: lastLaunch?.at || '',
       firstSeenAt: firstSeen?.at || ''
     },
-    timeline
+    timeline,
+    versions: versionRows,
+    recent
   }
 
   statsDashboardDirty = false
@@ -2456,43 +2540,167 @@ function resolveGitHubSourceToken(source) {
     .find(Boolean) || ''
 }
 
-function buildGitHubApiHeaders(token, accept = 'application/vnd.github+json') {
+function buildGitHubApiHeaders(token = '', accept = 'application/vnd.github+json') {
+  const resolvedToken = String(
+    token
+      || process.env.ROYALE_GITHUB_TOKEN
+      || process.env.GITHUB_TOKEN
+      || process.env.GH_TOKEN
+      || ''
+  ).trim()
   const headers = {
     Accept: accept,
+    'User-Agent': String(APP_NETWORK_HEADERS['User-Agent'] || APP_ID || 'RoyaleLauncher'),
     'X-GitHub-Api-Version': '2022-11-28'
   }
 
-  if (token) {
-    headers.Authorization = `Bearer ${token}`
+  if (resolvedToken) {
+    headers.Authorization = `Bearer ${resolvedToken}`
   }
 
   return headers
 }
 
-async function resolveGithubReleaseAssetRequest(source) {
-  const token = resolveGitHubSourceToken(source)
-  const releaseName = String(source.release || 'latest').trim() || 'latest'
-  const releaseEndpoint = releaseName.toLowerCase() === 'latest'
+function buildGitHubReleaseCandidates(releaseName = 'latest') {
+  const normalized = String(releaseName || 'latest').trim() || 'latest'
+  const candidates = []
+  const push = (value) => {
+    const nextValue = String(value || '').trim()
+    if (!nextValue) return
+    if (candidates.some((entry) => entry.toLowerCase() === nextValue.toLowerCase())) return
+    candidates.push(nextValue)
+  }
+
+  push(normalized)
+  if (normalized.toLowerCase() !== 'latest') {
+    if (normalized.startsWith('v')) {
+      push(normalized.slice(1))
+    } else if (/^\d/.test(normalized)) {
+      push(`v${normalized}`)
+    }
+  }
+
+  return candidates
+}
+
+function normalizeGitHubAssetName(value) {
+  return path.posix.basename(String(value || '').replace(/\\/g, '/')).trim().toLowerCase().replace(/\s+/g, '')
+}
+
+function findMatchingGitHubAsset(assets, expectedAssetName) {
+  const list = Array.isArray(assets) ? assets : []
+  const expected = String(expectedAssetName || '').trim()
+  const normalizedExpected = normalizeGitHubAssetName(expected)
+  if (!expected) {
+    return null
+  }
+
+  return list.find((entry) => String(entry?.name || '').trim().toLowerCase() === expected.toLowerCase())
+    || list.find((entry) => normalizeGitHubAssetName(entry?.name || '') === normalizedExpected)
+    || null
+}
+
+async function fetchGitHubReleasePayload(source, token, releaseName) {
+  const normalizedReleaseName = String(releaseName || 'latest').trim() || 'latest'
+  const releaseEndpoint = normalizedReleaseName.toLowerCase() === 'latest'
     ? `https://api.github.com/repos/${source.owner}/${source.repo}/releases/latest`
-    : `https://api.github.com/repos/${source.owner}/${source.repo}/releases/tags/${encodeURIComponent(releaseName)}`
+    : `https://api.github.com/repos/${source.owner}/${source.repo}/releases/tags/${encodeURIComponent(normalizedReleaseName)}`
 
   const releaseResponse = await fetchWithRetry(releaseEndpoint, {
     headers: buildGitHubApiHeaders(token)
   })
 
   if (!releaseResponse.ok) {
-    if ([401, 403, 404].includes(releaseResponse.status) && !token) {
+    return {
+      ok: false,
+      releaseName: normalizedReleaseName,
+      status: releaseResponse.status,
+      payload: null
+    }
+  }
+
+  return {
+    ok: true,
+    releaseName: normalizedReleaseName,
+    status: releaseResponse.status,
+    payload: await releaseResponse.json()
+  }
+}
+
+async function resolveGithubReleaseAssetRequest(source) {
+  const token = resolveGitHubSourceToken(source)
+  const attemptedReleases = []
+  const inspectedAssetNames = new Set()
+  let missingTokenHint = false
+  let matchedAsset = null
+
+  for (const releaseName of buildGitHubReleaseCandidates(source.release)) {
+    const releaseResult = await fetchGitHubReleasePayload(source, token, releaseName)
+    if (!releaseResult.ok) {
+      attemptedReleases.push(`${releaseResult.releaseName}:${releaseResult.status}`)
+      if ([401, 403, 404].includes(releaseResult.status) && !token) {
+        missingTokenHint = true
+      }
+      continue
+    }
+
+    const assets = Array.isArray(releaseResult.payload?.assets) ? releaseResult.payload.assets : []
+    for (const assetEntry of assets) {
+      const assetName = String(assetEntry?.name || '').trim()
+      if (assetName) {
+        inspectedAssetNames.add(assetName)
+      }
+    }
+
+    matchedAsset = findMatchingGitHubAsset(assets, source.asset)
+    if (matchedAsset) {
+      break
+    }
+
+    const resolvedTag = String(releaseResult.payload?.tag_name || releaseResult.releaseName || '').trim() || releaseResult.releaseName
+    attemptedReleases.push(`${resolvedTag}:${assets.length || 0}`)
+  }
+
+  if (!matchedAsset) {
+    const releasesResponse = await fetchWithRetry(`https://api.github.com/repos/${source.owner}/${source.repo}/releases?per_page=20`, {
+      headers: buildGitHubApiHeaders(token)
+    })
+
+    if (releasesResponse.ok) {
+      const releasesPayload = await releasesResponse.json()
+      const releases = Array.isArray(releasesPayload) ? releasesPayload : []
+      for (const releasePayload of releases) {
+        const assets = Array.isArray(releasePayload?.assets) ? releasePayload.assets : []
+        for (const assetEntry of assets) {
+          const assetName = String(assetEntry?.name || '').trim()
+          if (assetName) {
+            inspectedAssetNames.add(assetName)
+          }
+        }
+
+        matchedAsset = findMatchingGitHubAsset(assets, source.asset)
+        if (matchedAsset) {
+          break
+        }
+      }
+    } else if ([401, 403, 404].includes(releasesResponse.status) && !token) {
+      missingTokenHint = true
+    }
+  }
+
+  if (!matchedAsset) {
+    if (missingTokenHint && !token) {
       throw new Error(`Для защищённого источника ${source.owner}/${source.repo} нужен GitHub token. Укажите переменную окружения ${source.tokenEnv || 'ROYALE_GITHUB_TOKEN'} и попробуйте снова.`)
     }
 
-    throw new Error(`Не удалось получить release ${source.owner}/${source.repo}: ${releaseResponse.status}`)
-  }
+    const checkedReleasesText = attemptedReleases.length > 0
+      ? ` Проверил релизы: ${attemptedReleases.join(', ')}.`
+      : ''
+    const assetsText = inspectedAssetNames.size > 0
+      ? ` Найденные ассеты: ${[...inspectedAssetNames].slice(0, 12).join(', ')}.`
+      : ''
 
-  const releasePayload = await releaseResponse.json()
-  const assets = Array.isArray(releasePayload?.assets) ? releasePayload.assets : []
-  const matchedAsset = assets.find((entry) => String(entry?.name || '').trim().toLowerCase() === source.asset.toLowerCase())
-  if (!matchedAsset) {
-    throw new Error(`В release ${source.owner}/${source.repo} не найден asset ${source.asset}.`)
+    throw new Error(`В релизах ${source.owner}/${source.repo} не найден asset ${source.asset}.${checkedReleasesText}${assetsText}`)
   }
 
   const browserDownloadUrl = String(matchedAsset.browser_download_url || '').trim()
@@ -4073,7 +4281,7 @@ async function buildManagedClientLaunchPlan(settings, versionName, installDir, p
   }
 
   setLaunchStatus('Проверяю версии Minecraft и Fabric...')
-  await ensureManagedClientRuntime(settings, versionName, manifest, { downloadMissing: false })
+  await ensureManagedClientRuntime(settings, versionName, manifest, { stage: 'launch' })
   const baseVersionJsonPath = getSharedVersionJsonPath(settings, baseVersionId)
   const fabricVersionJsonPath = getSharedVersionJsonPath(settings, managedFabricVersionId)
   const clientJarPath = getSharedVersionJarPath(settings, baseVersionId)
@@ -4203,7 +4411,7 @@ async function buildManagedClientLaunchPlan(settings, versionName, installDir, p
   }
 
   setLaunchStatus('Проверяю managed-моды...')
-  await ensureManagedModsFromManifest(manifest, gameDir, { downloadMissing: false })
+  await ensureManagedModsFromManifest(manifest, gameDir, { stage: 'launch' })
   assertLaunchNotCancelled()
   const managedModFiles = listManagedRuntimeModFiles(gameDir)
   if (managedModFiles.length > 0 && !jvmArgs.some((item) => /^-Dfabric\.addMods=/i.test(item))) {
@@ -4592,17 +4800,11 @@ async function prepareClientProfile(settings, versionName, installDir) {
 
 const DEFAULT_LAUNCHER_UPDATE_REPO = 'SqwaTik/Royale-Launcher'
 
-function buildGitHubApiHeaders() {
-  const headers = {
-    Accept: 'application/vnd.github+json',
-    'User-Agent': String(APP_NETWORK_HEADERS['User-Agent'] || APP_ID || 'RoyaleLauncher'),
-    'X-GitHub-Api-Version': '2022-11-28'
+function buildLauncherUpdateHeaders() {
+  return {
+    ...buildGitHubApiHeaders(),
+    'User-Agent': String(APP_NETWORK_HEADERS['User-Agent'] || APP_ID || 'RoyaleLauncher')
   }
-  const token = String(process.env.GITHUB_TOKEN || process.env.GH_TOKEN || process.env.ROYALE_GITHUB_TOKEN || '').trim()
-  if (token) {
-    headers.Authorization = `Bearer ${token}`
-  }
-  return headers
 }
 
 async function checkLauncherUpdate() {
@@ -4612,7 +4814,7 @@ async function checkLauncherUpdate() {
 
   try {
     const response = await fetch(`https://api.github.com/repos/${updateRepo}/releases/latest`, {
-      headers: buildGitHubApiHeaders()
+      headers: buildLauncherUpdateHeaders()
     })
 
     if (!response.ok) {
