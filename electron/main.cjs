@@ -426,7 +426,7 @@ const DEFAULT_VERSION_CATALOG = [
       tokenEnv: 'ROYALE_GITHUB_TOKEN'
     },
     javaVersion: 21,
-    clientRevision: 'royale-1.0.14-r3',
+    clientRevision: 'royale-1.0.14-r4',
     notes: 'Клиент Royale Master для Minecraft 1.21.11 с отдельной установкой и прямым запуском.'
   },
   {
@@ -457,7 +457,7 @@ const DEFAULT_VERSION_CATALOG = [
       tokenEnv: 'ROYALE_GITHUB_TOKEN'
     },
     javaVersion: 17,
-    clientRevision: 'royale-1.0.14-1.16.5-r12',
+    clientRevision: 'royale-1.0.14-1.16.5-r13',
     notes: 'Клиент Royale Master для Minecraft 1.16.5 (Fabric) с отдельной установкой и прямым запуском.'
   },
   {
@@ -2806,12 +2806,16 @@ async function getJavaStatusForVersion(versionName) {
   const installDir = resolveVersionDirectory(settings, versionName)
   const manifest = await loadClientManifest(installDir, versionName)
   const status = await resolveJavaStatus(settings, versionName, manifest)
+  const requiredJavaVersion = Math.max(0, Number(status.requiredJavaVersion) || 0)
+  const resolvedJavaVersion = Math.max(0, Number(getJavaExecutableMajorVersion(status.javaExecutable)) || 0)
+  const exactMatch = !requiredJavaVersion || (resolvedJavaVersion > 0 && resolvedJavaVersion === requiredJavaVersion)
 
   return {
-    available: status.available,
+    available: Boolean(status.available && exactMatch),
     source: status.source,
     javaExecutable: status.javaExecutable,
-    requiredJavaVersion: status.requiredJavaVersion
+    requiredJavaVersion: status.requiredJavaVersion,
+    resolvedJavaVersion
   }
 }
 
@@ -3666,19 +3670,14 @@ async function resolveJavaStatus(settings, versionName, manifest = null) {
   const installRoot = resolveInstallRoot(settings)
   const cacheKey = `${installRoot}::${requiredJavaVersion}`
   if (javaExecutableCache?.key === cacheKey && javaExecutableCache.path && fs.existsSync(javaExecutableCache.path)) {
-    if (javaExecutableCache.source === 'system' && requiredJavaVersion > 0) {
-      const bundledCandidate = await findJavaExecutableInDirectory(getJavaRuntimeDirectory(settings, requiredJavaVersion))
-      if (isJavaExecutableCompatible(bundledCandidate, requiredJavaVersion)) {
+    if (requiredJavaVersion > 0) {
+      const exactRuntimeCandidate = await findJavaExecutableInDirectory(getJavaRuntimeDirectory(settings, requiredJavaVersion))
+      if (isJavaExecutableCompatible(exactRuntimeCandidate, requiredJavaVersion)) {
         javaExecutableCache = null
-      } else {
-        return {
-          available: true,
-          source: javaExecutableCache.source || 'cache',
-          javaExecutable: javaExecutableCache.path,
-          requiredJavaVersion
-        }
       }
-    } else {
+    }
+
+    if (javaExecutableCache?.key === cacheKey && javaExecutableCache.path && fs.existsSync(javaExecutableCache.path)) {
       return {
         available: true,
         source: javaExecutableCache.source || 'cache',
@@ -3755,7 +3754,6 @@ async function resolveJavaExecutable(settings, versionName, manifest = null) {
     const requiredJavaVersion = Math.max(0, Number(status.requiredJavaVersion) || 0)
     const resolvedMajorVersion = Math.max(0, Number(getJavaExecutableMajorVersion(status.javaExecutable)) || 0)
     const shouldInstallExactRuntime =
-      status.source === 'system' &&
       requiredJavaVersion > 0 &&
       resolvedMajorVersion > 0 &&
       resolvedMajorVersion !== requiredJavaVersion
@@ -3839,14 +3837,12 @@ async function installJavaRuntime(settings, versionName, manifest = null) {
     const currentStatus = await resolveJavaStatus(settings, versionName, manifest)
     const requiredJavaVersion = currentStatus.requiredJavaVersion || resolveRequiredJavaVersion(settings, versionName, manifest)
     const currentMajorVersion = Math.max(0, Number(getJavaExecutableMajorVersion(currentStatus.javaExecutable)) || 0)
-    const shouldInstallExactRuntime =
-      currentStatus.available &&
-      currentStatus.source === 'system' &&
+    const hasExactRuntime =
       requiredJavaVersion > 0 &&
       currentMajorVersion > 0 &&
-      currentMajorVersion !== requiredJavaVersion
+      currentMajorVersion === requiredJavaVersion
 
-    if (currentStatus.available && !shouldInstallExactRuntime) {
+    if (currentStatus.available && hasExactRuntime) {
       emitJavaInstallStatus('')
       emitJavaInstallProgress({ phase: 'idle', progress: 0, current: 0, total: 0 })
       return currentStatus
@@ -4879,7 +4875,24 @@ async function installLauncherUpdate() {
   const updateDir = path.join(app.getPath('temp'), 'RoyaleLauncherUpdate')
   const installerName = update.assetName || `RoyaleLauncherInstaller-v${update.version || app.getVersion()}.exe`
   const installerPath = path.join(updateDir, installerName)
-  await downloadRemoteFile(update.url, installerPath)
+  emit('launcher-update:progress', {
+    stage: 'download',
+    label: 'Скачиваю обновление лаунчера...',
+    current: 0,
+    total: 0,
+    progress: 0
+  })
+  await downloadRemoteFile(update.url, installerPath, {
+    onProgress: (progress) => {
+      emit('launcher-update:progress', {
+        stage: 'download',
+        label: 'Скачиваю обновление лаунчера...',
+        current: progress.current,
+        total: progress.total,
+        progress: progress.progress
+      })
+    }
+  })
   try {
     const stats = await fsp.stat(installerPath)
     if (!stats || stats.size <= 0) {
@@ -4888,6 +4901,14 @@ async function installLauncherUpdate() {
   } catch {
     throw new Error('Не удалось скачать installer для обновления лаунчера.')
   }
+
+  emit('launcher-update:progress', {
+    stage: 'done',
+    label: 'Готовлю перезапуск...',
+    current: 1,
+    total: 1,
+    progress: 1
+  })
 
   const fallbackLaunchExe = path.join(path.dirname(app.getPath('exe')), 'Royale Launcher.exe')
   const currentExe = process.execPath

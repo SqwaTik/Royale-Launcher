@@ -13,7 +13,7 @@
     },
     "notes": "Клиент Royale Master для Minecraft 1.21.11 с отдельной установкой и прямым запуском.",
     "javaVersion": 21,
-    "clientRevision": "royale-1.0.14-r3"
+    "clientRevision": "royale-1.0.14-r4"
   },
   {
     "versionName": "26.1",
@@ -45,7 +45,7 @@
     },
     "notes": "Клиент Royale Master для Minecraft 1.16.5 (Fabric) с отдельной установкой и прямым запуском.",
     "javaVersion": 17,
-    "clientRevision": "royale-1.0.14-1.16.5-r12"
+    "clientRevision": "royale-1.0.14-1.16.5-r13"
   },
   {
     "versionName": "1.12.2",

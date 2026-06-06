@@ -343,6 +343,14 @@ function PauseIcon() {
   )
 }
 
+function PlayIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="m8 6 10 6-10 6z" />
+    </svg>
+  )
+}
+
 function StopIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -842,6 +850,7 @@ function App() {
   const [javaPrompt, setJavaPrompt] = useState(DEFAULT_JAVA_PROMPT)
   const [updateInfo, setUpdateInfo] = useState(DEFAULT_UPDATE_INFO)
   const [installingUpdate, setInstallingUpdate] = useState(false)
+  const [launcherUpdateProgress, setLauncherUpdateProgress] = useState(DEFAULT_PROGRESS)
   const [memoryProfile, setMemoryProfile] = useState(DEFAULT_MEMORY_PROFILE)
   const [storageInfo, setStorageInfo] = useState(DEFAULT_STORAGE_INFO)
   const [bootstrapped, setBootstrapped] = useState(false)
@@ -1219,12 +1228,24 @@ function App() {
       } : current)
     })
 
+    const offLauncherUpdateProgress = api.onLauncherUpdateProgress?.((payload) => {
+      setLauncherUpdateProgress({
+        ...DEFAULT_PROGRESS,
+        stage: String(payload?.stage || 'download').trim() || 'download',
+        label: String(payload?.label || '').trim(),
+        progress: Number(payload?.progress) || 0,
+        current: Number(payload?.current) || 0,
+        total: Number(payload?.total) || 0
+      })
+    }) || (() => {})
+
     return () => {
       offProgress()
       offStatus()
       offLaunchStatus()
       offJavaProgress()
       offJavaStatus()
+      offLauncherUpdateProgress()
       if (autosaveTimerRef.current) {
         clearTimeout(autosaveTimerRef.current)
       }
@@ -1575,13 +1596,6 @@ function App() {
       setInstallProgress(DEFAULT_PROGRESS)
     }
 
-    await new Promise((resolve) => {
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(resolve)
-      })
-    })
-    await new Promise((resolve) => window.setTimeout(resolve, 28))
-
     try {
       if (nextActionMode === 'launch') {
         await api.launchVersion(selectedVersion)
@@ -1750,6 +1764,7 @@ function App() {
 
     try {
       setInstallingUpdate(true)
+      setLauncherUpdateProgress(DEFAULT_PROGRESS)
       const result = await api.installLauncherUpdate()
       if (!result?.started) {
         setInstallingUpdate(false)
@@ -1943,6 +1958,11 @@ function App() {
     : resolvedPendingInstallMeta
   const showInstallPauseControl = (busy && actionMode === 'install') || pendingInstallPaused
   const showBusyCancelControl = busy || hasPendingInstall
+  const launcherUpdateLabel = installingUpdate
+    ? launcherUpdateProgress.progress > 0
+      ? `Скачиваю обновление... ${Math.round(Math.max(0, Math.min(1, Number(launcherUpdateProgress.progress) || 0)) * 100)}%`
+      : 'Скачиваю обновление...'
+    : `${TEXT.updateAction} v${updateInfo.version}`
 
   const featureLead = versionState.running
     ? `Клиент ${selectedProfile?.title || 'Royale Master'} уже запущен. Лаунчер можно закрыть, Minecraft продолжит работать.`
@@ -1992,8 +2012,8 @@ function App() {
         <main className="content">
           {updateInfo.available ? (
             <div className="update-banner" role="status" aria-live="polite">
-              <button className="update-banner__button" onClick={handleOpenUpdate}>
-                {installingUpdate ? 'Скачиваю обновление...' : `${TEXT.updateAction} v${updateInfo.version}`}
+              <button className="update-banner__button" onClick={handleOpenUpdate} disabled={installingUpdate}>
+                {launcherUpdateLabel}
               </button>
             </div>
           ) : null}
@@ -2152,7 +2172,7 @@ function App() {
                               aria-label={installPaused ? 'Resume install' : 'Pause install'}
                               title={installPaused ? 'Продолжить' : 'Пауза'}
                             >
-                              <PauseIcon />
+                              {installPaused ? <PlayIcon /> : <PauseIcon />}
                             </button>
                           ) : null}
                           {showBusyCancelControl ? (

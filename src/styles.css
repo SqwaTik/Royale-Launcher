@@ -4499,8 +4499,9 @@ input {
 .catalog-list,
 .version-dock__list,
 .feature-stage__panel {
-  contain: content;
+  contain: layout paint;
   scroll-behavior: auto;
+  scrollbar-gutter: stable;
 }
 
 .feature-stage__overlay {
@@ -4508,11 +4509,11 @@ input {
 }
 
 .feature-stage__panel {
-  width: calc(100% - 8px);
-  max-width: calc(100% - 8px);
+  width: min(100%, 720px);
+  max-width: 720px;
   margin: 6px auto;
-  padding: 14px 16px 16px;
-  contain: content;
+  padding: 14px 18px 18px;
+  contain: layout paint;
 }
 
 .feature-stage__visual {
@@ -4557,7 +4558,8 @@ input {
 }
 
 .stats-panel__split {
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.92fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: stretch;
 }
 
 .settings-card,
@@ -4566,7 +4568,7 @@ input {
 .stats-card,
 .stats-panel {
   contain: layout paint style;
-  content-visibility: auto;
+  content-visibility: visible;
 }
 
 .settings-card,
@@ -4578,6 +4580,14 @@ input {
 .stats-card,
 .stats-panel {
   contain-intrinsic-size: 220px;
+}
+
+.stats-card--metric {
+  grid-template-rows: auto auto auto minmax(40px, 1fr);
+}
+
+.stats-card__hint {
+  min-height: 40px;
 }
 
 .stats-page {
@@ -4595,6 +4605,10 @@ input {
 .stats-feed__head span,
 .stats-breakdown__copy span {
   text-rendering: auto;
+}
+
+.stats-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
 @media (max-width: 1200px) {

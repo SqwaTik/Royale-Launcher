@@ -8,6 +8,11 @@ contextBridge.exposeInMainWorld('royaleApi', {
   getStorageInfo: (targetPath) => ipcRenderer.invoke('system:get-storage-info', targetPath),
   checkLauncherUpdate: () => ipcRenderer.invoke('launcher:check-update'),
   installLauncherUpdate: () => ipcRenderer.invoke('launcher:install-update'),
+  onLauncherUpdateProgress: (callback) => {
+    const listener = (_event, payload) => callback(payload)
+    ipcRenderer.on('launcher-update:progress', listener)
+    return () => ipcRenderer.removeListener('launcher-update:progress', listener)
+  },
   pickFolder: () => ipcRenderer.invoke('dialog:pick-folder'),
   openFolder: (targetPath) => ipcRenderer.invoke('shell:open-folder', targetPath),
   openExternal: (targetUrl) => ipcRenderer.invoke('shell:open-external', targetUrl),
