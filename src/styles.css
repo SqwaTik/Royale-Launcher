@@ -3939,7 +3939,7 @@ input {
 
 .stats-page {
   gap: 18px;
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
 }
 
 .stats-panel,
@@ -4426,8 +4426,8 @@ input {
 }
 
 .hero__backdrop {
-  opacity: 0.15;
-  filter: blur(10px) saturate(0.92);
+  opacity: 0.1;
+  filter: blur(4px) saturate(0.95);
   inset: -28% -24% -22% -28%;
 }
 
@@ -4535,7 +4535,7 @@ input {
 .hero__backdrop--previous,
 .feature-stage__visual-image--current,
 .feature-stage__visual-image--previous {
-  animation-duration: 220ms;
+  animation-duration: 160ms;
 }
 
 .feature-stage__art {
@@ -4544,7 +4544,22 @@ input {
 
 .hero__backdrop,
 .feature-stage__visual-image {
-  transition-duration: 180ms;
+  transition-duration: 120ms;
+}
+
+.stats-context-backdrop,
+.modal-backdrop,
+.crash-backdrop {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.stats-context-backdrop {
+  background: rgba(5, 8, 14, 0.8);
+}
+
+.hero::after {
+  opacity: 0.68;
 }
 
 .icon-action {

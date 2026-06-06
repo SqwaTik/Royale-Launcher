@@ -769,7 +769,7 @@ function formatDateTime(value) {
   }
 }
 
-function requestIdleTask(callback, timeout = 1) {
+function requestIdleTask(callback, timeout = 80) {
   if (typeof window.requestIdleCallback === 'function') {
     return window.requestIdleCallback(callback, { timeout })
   }
@@ -789,6 +789,17 @@ function cancelIdleTask(handle) {
   }
 
   window.clearTimeout(handle)
+}
+
+function waitForNextPaint() {
+  return new Promise((resolve) => {
+    if (typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(() => resolve())
+      return
+    }
+
+    window.setTimeout(resolve, 0)
+  })
 }
 
 function getToastToneFromMessage(message) {
@@ -1513,6 +1524,8 @@ function App() {
       status: current.status || `Скачиваю Java ${current.requiredJavaVersion}...`
     }))
 
+    await waitForNextPaint()
+
     try {
       await api.installJava(javaPrompt.versionName)
       if (javaPrompt.rememberChoice && javaPrompt.requiredJavaVersion) {
@@ -1576,19 +1589,24 @@ function App() {
     }
 
     const nextActionMode = versionState.installed && !versionState.updateAvailable ? 'launch' : 'install'
+    setBusy(true)
+    setActionMode(nextActionMode)
+    setStatusText(nextActionMode === 'launch' ? 'Запускаю Minecraft...' : '')
+    if (!(nextActionMode === 'install' && hasPendingInstall)) {
+      setInstallProgress(DEFAULT_PROGRESS)
+    }
+
+    await waitForNextPaint()
 
     const currentDraft = draftRef.current
     const savedPlayerName = await commitPlayerNameDraft(currentDraft.playerName, { notify: false })
     if (currentDraft.playerName && !savedPlayerName) {
+      setBusy(false)
+      setActionMode('idle')
+      setStatusText('')
       return
     }
 
-    setBusy(true)
-    setActionMode(nextActionMode)
-    setStatusText('')
-    if (!(nextActionMode === 'install' && hasPendingInstall)) {
-      setInstallProgress(DEFAULT_PROGRESS)
-    }
     const shouldAutoLaunchAfterInstall = nextActionMode === 'install' && versionState.installed && versionState.updateAvailable
 
     try {
@@ -1770,6 +1788,7 @@ function App() {
     try {
       setInstallingUpdate(true)
       setLauncherUpdateProgress(DEFAULT_PROGRESS)
+      await waitForNextPaint()
       const result = await api.installLauncherUpdate()
       if (!result?.started) {
         setInstallingUpdate(false)
@@ -1952,13 +1971,13 @@ function App() {
       : versionState.hasSource
         ? 'Установит клиент Royale Master'
         : 'Версия появится позже'
-  const pendingInstallMeta = hasPendingInstall
-    ? progressStatusText || versionState.pendingInstall.statusMessage || (pendingInstallPaused ? 'Загрузка на паузе' : 'Загрузку можно продолжить')
-    : buttonMeta
+  const installPauseVisualState = busy && actionMode === 'install'
+    ? installPaused
+    : pendingInstallPaused
   const resolvedPendingInstallMeta = hasPendingInstall
-    ? progressStatusText || versionState.pendingInstall.statusMessage || (pendingInstallPaused ? '\u0417\u0430\u0433\u0440\u0443\u0437\u043a\u0430 \u043d\u0430 \u043f\u0430\u0443\u0437\u0435' : '\u0417\u0430\u0433\u0440\u0443\u0437\u043a\u0443 \u043c\u043e\u0436\u043d\u043e \u043f\u0440\u043e\u0434\u043e\u043b\u0436\u0438\u0442\u044c')
+    ? progressStatusText || versionState.pendingInstall.statusMessage || (installPauseVisualState ? 'Загрузка на паузе' : 'Загрузку можно продолжить')
     : buttonMeta
-  const displayButtonMeta = (busy && actionMode === 'install' && installPaused) || pendingInstallPaused
+  const displayButtonMeta = installPauseVisualState
     ? 'Загрузка на паузе'
     : resolvedPendingInstallMeta
   const showInstallPauseControl = (busy && actionMode === 'install') || pendingInstallPaused
@@ -2171,13 +2190,13 @@ function App() {
                         <div className="feature-stage__busy-actions">
                           {showInstallPauseControl ? (
                             <button
-                              className={`icon-action ${installPaused ? 'is-active' : ''}`}
+                              className={`icon-action ${installPauseVisualState ? 'is-active' : ''}`}
                               type="button"
                               onClick={handlePauseInstall}
-                              aria-label={installPaused ? 'Resume install' : 'Pause install'}
-                              title={installPaused ? 'Продолжить' : 'Пауза'}
+                              aria-label={installPauseVisualState ? 'Resume install' : 'Pause install'}
+                              title={installPauseVisualState ? 'Продолжить' : 'Пауза'}
                             >
-                              {installPaused ? <PlayIcon /> : <PauseIcon />}
+                              {installPauseVisualState ? <PlayIcon /> : <PauseIcon />}
                             </button>
                           ) : null}
                           {showBusyCancelControl ? (
